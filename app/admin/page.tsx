@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
-import * as XLSX from 'xlsx';
+import { supabase } from '@/lib/supabase';
+import { Users, Calendar, Clock, Trash2, CheckCircle2 } from 'lucide-react';
 
 interface Entry {
   id: number;
@@ -12,131 +12,127 @@ interface Entry {
   time_slot: string;
   num_people: number;
   status: string;
-  created_at?: string;
-}
-
-interface MasterSlot {
-  id: number;
-  booth_name: string;
-  event_date: string;
-  time_slot: string;
-  capacity: number;
+  created_at: string;
 }
 
 export default function AdminPage() {
   const [entries, setEntries] = useState<Entry[]>([]);
-  const [masterSlots, setMasterSlots] = useState<MasterSlot[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState(true);
 
-  const loadData = async () => {
+  // 予約データの取得
+  const fetchEntries = async () => {
     setLoading(true);
-    const { data: masterData } = await supabase.from('draw_master').select('*');
-    const { data: entryData } = await supabase.from('draw_entries').select('*').order('created_at', { ascending: true });
+    const { data, error } = await supabase
+      .from('draw_entries')
+      .select('*')
+      .order('created_at', { ascending: false });
 
-    if (masterData) setMasterSlots(masterData as MasterSlot[]);
-    if (entryData) setEntries(entryData as Entry[]);
+    if (error) {
+      console.error('データ取得エラー:', error);
+    } else {
+      setEntries(data || []);
+    }
     setLoading(false);
   };
 
   useEffect(() => {
-    loadData();
+    fetchEntries();
   }, []);
 
-  // 総予約人数と予約件数の計算
-  const validEntries = entries.filter(e => e.status === '予約確定' || e.status === '当選');
-  const totalReservedPeople = validEntries.reduce((sum, e) => sum + e.num_people, 0);
+  // 予約削除処理
+  const handleDelete = async (id: number) => {
+    if (!confirm('この予約を取り消しますか？')) return;
 
-  // Excel出力機能
-  const downloadExcel = () => {
-    if (validEntries.length === 0) {
-      alert('予約データがありません。');
-      return;
+    const { error } = await supabase
+      .from('draw_entries')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      alert('削除に失敗しました');
+    } else {
+      fetchEntries();
     }
-
-    const sortedEntries = [...validEntries].sort((a, b) => {
-      if (a.event_date !== b.event_date) return a.event_date.localeCompare(b.event_date);
-      if (a.booth_name !== b.booth_name) return a.booth_name.localeCompare(b.booth_name);
-      return a.time_slot.localeCompare(b.time_slot);
-    });
-
-    const excelData = sortedEntries.map(item => ({
-      'お呼び出し名': item.user_name,
-      '開催日': item.event_date,
-      '対象ブース': item.booth_name,
-      '予約時間枠': item.time_slot,
-      '参加人数': item.num_people,
-      'ステータス': '予約確定'
-    }));
-
-    const worksheet = XLSX.utils.json_to_sheet(excelData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, '当日受付名簿');
-    XLSX.writeFile(workbook, 'フェスティバル当日受付名簿.xlsx');
   };
 
-  if (loading) return <div className="p-6 text-center text-gray-500 font-bold">管理データを読み込み中...</div>;
-
   return (
-    <div className="p-6 max-w-4xl mx-auto bg-gray-50 min-h-screen">
-      <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4 border-b pb-4">
-        <h1 className="text-2xl font-bold text-gray-800">⚙️ 先着予約 管理ダッシュボード</h1>
-        <div className="flex gap-2 w-full sm:w-auto">
+    <div className="min-h-screen bg-slate-50 p-6">
+      <div className="max-w-6xl mx-auto space-y-6">
+        <div className="flex justify-between items-center bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-800">予約管理ダッシュボード</h1>
+            <p className="text-sm text-slate-500 mt-1">全 {entries.length} 件の予約一覧</p>
+          </div>
           <button
-            onClick={downloadExcel}
-            className="flex-1 sm:flex-none px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg transition"
+            onClick={fetchEntries}
+            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition"
           >
-            📊 予約名簿をExcel出力
+            データを更新
           </button>
         </div>
-      </div>
 
-      {/* サマリー表示 */}
-      <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 gap-4 text-center font-bold text-sm">
-        <div className="bg-blue-50 border border-blue-200 text-blue-800 p-3 rounded-lg">
-          総予約件数: {validEntries.length} 件
+        {/* 予約一覧テーブル */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+          {loading ? (
+            <div className="p-8 text-center text-slate-500">読み込み中...</div>
+          ) : entries.length === 0 ? (
+            <div className="p-8 text-center text-slate-500">まだ予約データがありません。</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-slate-600">
+                <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
+                  <tr>
+                    <th className="p-4">申込者名</th>
+                    <th className="p-4">ブース名</th>
+                    <th className="p-4">日程 / 時間帯</th>
+                    <th className="p-4 text-center">人数</th>
+                    <th className="p-4 text-center">状態</th>
+                    <th className="p-4 text-center">操作</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {entries.map((entry) => (
+                    <tr key={entry.id} className="hover:bg-slate-50">
+                      <td className="p-4 font-medium text-slate-900">{entry.user_name}</td>
+                      <td className="p-4 font-semibold text-indigo-600">{entry.booth_name}</td>
+                      <td className="p-4 space-y-1">
+                        <div className="flex items-center gap-1 text-slate-700">
+                          <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                          <span>{entry.event_date}</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-xs text-slate-500">
+                          <Clock className="w-3.5 h-3.5 text-slate-400" />
+                          <span>{entry.time_slot}</span>
+                        </div>
+                      </td>
+                      <td className="p-4 text-center font-medium">
+                        <span className="inline-flex items-center gap-1">
+                          <Users className="w-3.5 h-3.5 text-slate-400" />
+                          {entry.num_people}名
+                        </span>
+                      </td>
+                      <td className="p-4 text-center">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <CheckCircle2 className="w-3 h-3" />
+                          {entry.status}
+                        </span>
+                      </td>
+                      <td className="p-4 text-center">
+                        <button
+                          onClick={() => handleDelete(entry.id)}
+                          className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                          title="削除"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
-        <div className="bg-green-50 border border-green-200 text-green-800 p-3 rounded-lg">
-          総予約人数: {totalReservedPeople} 名
-        </div>
-      </div>
-
-      {/* 予約者一覧テーブル */}
-      <div className="bg-white rounded-xl shadow border overflow-x-auto">
-        <table className="w-full text-left border-collapse text-sm">
-          <thead>
-            <tr className="bg-gray-100 border-b">
-              <th className="p-3 font-bold text-gray-600">お呼び出し名</th>
-              <th className="p-3 font-bold text-gray-600">希望日</th>
-              <th className="p-3 font-bold text-gray-600">ブース</th>
-              <th className="p-3 font-bold text-gray-600">時間枠</th>
-              <th className="p-3 font-bold text-gray-600">人数</th>
-              <th className="p-3 font-bold text-gray-600">ステータス</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.length === 0 ? (
-              <tr><td colSpan={6} className="p-6 text-center text-gray-400 italic">まだ予約データはありません。</td></tr>
-            ) : (
-              entries.map(entry => (
-                <tr key={entry.id} className="border-b hover:bg-gray-50 transition">
-                  <td className="p-3 font-bold">{entry.user_name}</td>
-                  <td className="p-3 text-gray-600">{entry.event_date}</td>
-                  <td className="p-3 text-gray-600">{entry.booth_name}</td>
-                  <td className="p-3 text-gray-600">{entry.time_slot}</td>
-                  <td className="p-3 font-bold text-gray-700">{entry.num_people}名</td>
-                  <td className="p-3">
-                    {(entry.status === '予約確定' || entry.status === '当選') && (
-                      <span className="px-2 py-1 bg-green-100 text-green-800 font-bold rounded text-xs">予約確定</span>
-                    )}
-                    {entry.status === 'キャンセル' && (
-                      <span className="px-2 py-1 bg-gray-100 text-gray-500 rounded text-xs">キャンセル</span>
-                    )}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
       </div>
     </div>
   );
