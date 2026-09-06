@@ -2,7 +2,16 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Users, Calendar, Clock, Trash2, CheckCircle2 } from 'lucide-react';
+
+// 型定義
+interface MasterSlot {
+  id: number;
+  event_date: string;
+  booth_name: string;
+  time_slot: string;
+  max_seats: number;
+  reserved_seats: number;
+}
 
 interface Entry {
   id: number;
@@ -16,124 +25,311 @@ interface Entry {
 }
 
 export default function AdminPage() {
+  const [activeTab, setActiveTab] = useState<'entries' | 'master'>('entries');
+  
+  // 予約データ状態
   const [entries, setEntries] = useState<Entry[]>([]);
-  const [loading, setLoading] = useState(true);
+  
+  // マスターデータ状態
+  const [masters, setMasters] = useState<MasterSlot[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
 
-  // 予約データの取得
-  const fetchEntries = async () => {
+  // 新規マスター登録フォームの状態
+  const [newEventDate, setNewEventDate] = useState('');
+  const [newBoothName, setNewBoothName] = useState('');
+  const [newTimeSlot, setNewTimeSlot] = useState('');
+  const [newMaxSeats, setNewMaxSeats] = useState(5);
+
+  // データ取得
+  const fetchData = async () => {
     setLoading(true);
-    const { data, error } = await supabase
+    // 予約データ取得
+    const { data: entriesData, error: entriesErr } = await supabase
       .from('draw_entries')
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (error) {
-      console.error('データ取得エラー:', error);
-    } else {
-      setEntries(data || []);
-    }
+    if (entriesErr) console.error('予約データの取得に失敗:', entriesErr);
+    else setEntries(entriesData || []);
+
+    // マスターデータ取得
+    const { data: masterData, error: masterErr } = await supabase
+      .from('draw_master')
+      .select('*')
+      .order('event_date', { ascending: true });
+
+    if (masterErr) console.error('マスターデータの取得に失敗:', masterErr);
+    else setMasters(masterData || []);
+
     setLoading(false);
   };
 
   useEffect(() => {
-    fetchEntries();
+    fetchData();
   }, []);
 
-  // 予約削除処理
-  const handleDelete = async (id: number) => {
-    if (!confirm('この予約を取り消しますか？')) return;
+  // 【マスター】新規追加
+  const handleAddMaster = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newEventDate || !newBoothName || !newTimeSlot) {
+      alert('すべての項目を入力してください');
+      return;
+    }
 
-    const { error } = await supabase
-      .from('draw_entries')
-      .delete()
-      .eq('id', id);
+    const { error } = await supabase.from('draw_master').insert([
+      {
+        event_date: newEventDate,
+        booth_name: newBoothName,
+        time_slot: newTimeSlot,
+        max_seats: Number(newMaxSeats),
+        reserved_seats: 0,
+      },
+    ]);
 
     if (error) {
-      alert('削除に失敗しました');
+      alert('追加に失敗しました: ' + error.message);
     } else {
-      fetchEntries();
+      alert('マスターデータを追加しました');
+      // フォームリセット
+      setNewBoothName('');
+      setNewTimeSlot('');
+      fetchData();
+    }
+  };
+
+  // 【マスター】削除
+  const handleDeleteMaster = async (id: number) => {
+    if (!confirm('この枠を削除しますか？（※既に予約がある場合は影響が出ます）')) return;
+
+    const { error } = await supabase.from('draw_master').delete().eq('id', id);
+    if (error) {
+      alert('削除に失敗しました: ' + error.message);
+    } else {
+      fetchData();
+    }
+  };
+
+  // 【予約】キャンセル・削除
+  const handleDeleteEntry = async (id: number) => {
+    if (!confirm('この予約を取り消しますか？')) return;
+
+    const { error } = await supabase.from('draw_entries').delete().eq('id', id);
+    if (error) {
+      alert('削除に失敗しました: ' + error.message);
+    } else {
+      fetchData();
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
-      <div className="max-w-6xl mx-auto space-y-6">
-        <div className="flex justify-between items-center bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800">予約管理ダッシュボード</h1>
-            <p className="text-sm text-slate-500 mt-1">全 {entries.length} 件の予約一覧</p>
-          </div>
-          <button
-            onClick={fetchEntries}
-            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition"
-          >
-            データを更新
-          </button>
-        </div>
+    <div className="max-w-6xl mx-auto p-6 space-y-6">
+      <div className="flex justify-between items-center border-b pb-4">
+        <h1 className="text-2xl font-bold">予約システム管理画面</h1>
+        <button
+          onClick={fetchData}
+          className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-sm rounded transition"
+        >
+          🔄 最新情報に更新
+        </button>
+      </div>
 
-        {/* 予約一覧テーブル */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          {loading ? (
-            <div className="p-8 text-center text-slate-500">読み込み中...</div>
-          ) : entries.length === 0 ? (
-            <div className="p-8 text-center text-slate-500">まだ予約データがありません。</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm text-slate-600">
-                <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
+      {/* タブ切り替え */}
+      <div className="flex space-x-4 border-b">
+        <button
+          className={`py-2 px-4 font-semibold border-b-2 ${
+            activeTab === 'entries'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+          onClick={() => setActiveTab('entries')}
+        >
+          📋 予約一覧 ({entries.length}件)
+        </button>
+        <button
+          className={`py-2 px-4 font-semibold border-b-2 ${
+            activeTab === 'master'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+          onClick={() => setActiveTab('master')}
+        >
+          ⚙️ マスター枠管理 ({masters.length}件)
+        </button>
+      </div>
+
+      {loading ? (
+        <p className="text-gray-500 text-center py-8">データを読み込み中...</p>
+      ) : (
+        <>
+          {/* ----- タブ1: 予約一覧 ----- */}
+          {activeTab === 'entries' && (
+            <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-gray-50 border-b">
                   <tr>
-                    <th className="p-4">申込者名</th>
-                    <th className="p-4">ブース名</th>
-                    <th className="p-4">日程 / 時間帯</th>
-                    <th className="p-4 text-center">人数</th>
-                    <th className="p-4 text-center">状態</th>
-                    <th className="p-4 text-center">操作</th>
+                    <th className="p-3">日時</th>
+                    <th className="p-3">お名前</th>
+                    <th className="p-3">ブース</th>
+                    <th className="p-3">時間帯</th>
+                    <th className="p-3">人数</th>
+                    <th className="p-3">受付日時</th>
+                    <th className="p-3 text-center">操作</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {entries.map((entry) => (
-                    <tr key={entry.id} className="hover:bg-slate-50">
-                      <td className="p-4 font-medium text-slate-900">{entry.user_name}</td>
-                      <td className="p-4 font-semibold text-indigo-600">{entry.booth_name}</td>
-                      <td className="p-4 space-y-1">
-                        <div className="flex items-center gap-1 text-slate-700">
-                          <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                          <span>{entry.event_date}</span>
-                        </div>
-                        <div className="flex items-center gap-1 text-xs text-slate-500">
-                          <Clock className="w-3.5 h-3.5 text-slate-400" />
-                          <span>{entry.time_slot}</span>
-                        </div>
-                      </td>
-                      <td className="p-4 text-center font-medium">
-                        <span className="inline-flex items-center gap-1">
-                          <Users className="w-3.5 h-3.5 text-slate-400" />
-                          {entry.num_people}名
-                        </span>
-                      </td>
-                      <td className="p-4 text-center">
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          <CheckCircle2 className="w-3 h-3" />
-                          {entry.status}
-                        </span>
-                      </td>
-                      <td className="p-4 text-center">
-                        <button
-                          onClick={() => handleDelete(entry.id)}
-                          className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
-                          title="削除"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                <tbody className="divide-y">
+                  {entries.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="p-4 text-center text-gray-500">
+                        予約データはありません
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    entries.map((item) => (
+                      <tr key={item.id} className="hover:bg-gray-50">
+                        <td className="p-3">{item.event_date}</td>
+                        <td className="p-3 font-semibold">{item.user_name}</td>
+                        <td className="p-3">{item.booth_name}</td>
+                        <td className="p-3">{item.time_slot}</td>
+                        <td className="p-3">{item.num_people}名</td>
+                        <td className="p-3 text-xs text-gray-500">
+                          {new Date(item.created_at).toLocaleString('ja-JP')}
+                        </td>
+                        <td className="p-3 text-center">
+                          <button
+                            onClick={() => handleDeleteEntry(item.id)}
+                            className="text-red-600 hover:text-red-800 text-xs px-2 py-1 border border-red-200 rounded hover:bg-red-50"
+                          >
+                            🗑️ 削除
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
           )}
-        </div>
-      </div>
+
+          {/* ----- タブ2: マスター枠管理 ----- */}
+          {activeTab === 'master' && (
+            <div className="space-y-6">
+              {/* 新規追加フォーム */}
+              <form
+                onSubmit={handleAddMaster}
+                className="bg-blue-50 border border-blue-100 rounded-lg p-4 space-y-4"
+              >
+                <h2 className="font-bold text-blue-900 text-sm">＋ 新しい枠を追加する</h2>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">開催日</label>
+                    <input
+                      type="date"
+                      value={newEventDate}
+                      onChange={(e) => setNewEventDate(e.target.value)}
+                      className="w-full p-2 border rounded text-sm bg-white"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">ブース名</label>
+                    <input
+                      type="text"
+                      placeholder="例: Aブース"
+                      value={newBoothName}
+                      onChange={(e) => setNewBoothName(e.target.value)}
+                      className="w-full p-2 border rounded text-sm bg-white"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">時間帯</label>
+                    <input
+                      type="text"
+                      placeholder="例: 10:00-11:00"
+                      value={newTimeSlot}
+                      onChange={(e) => setNewTimeSlot(e.target.value)}
+                      className="w-full p-2 border rounded text-sm bg-white"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">定員（名）</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={newMaxSeats}
+                      onChange={(e) => setNewMaxSeats(Number(e.target.value))}
+                      className="w-full p-2 border rounded text-sm bg-white"
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="text-right">
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-semibold hover:bg-blue-700 transition"
+                  >
+                    枠を追加登録
+                  </button>
+                </div>
+              </form>
+
+              {/* マスターデータ一覧 */}
+              <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-gray-50 border-b">
+                    <tr>
+                      <th className="p-3">開催日</th>
+                      <th className="p-3">ブース名</th>
+                      <th className="p-3">時間帯</th>
+                      <th className="p-3">定員</th>
+                      <th className="p-3">現在の予約数</th>
+                      <th className="p-3 text-center">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {masters.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="p-4 text-center text-gray-500">
+                          枠データが登録されていません
+                        </td>
+                      </tr>
+                    ) : (
+                      masters.map((slot) => (
+                        <tr key={slot.id} className="hover:bg-gray-50">
+                          <td className="p-3">{slot.event_date}</td>
+                          <td className="p-3 font-semibold">{slot.booth_name}</td>
+                          <td className="p-3">{slot.time_slot}</td>
+                          <td className="p-3">{slot.max_seats}名</td>
+                          <td className="p-3">
+                            <span
+                              className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                                slot.reserved_seats >= slot.max_seats
+                                  ? 'bg-red-100 text-red-700'
+                                  : 'bg-green-100 text-green-700'
+                              }`}
+                            >
+                              {slot.reserved_seats} / {slot.max_seats} 名
+                            </span>
+                          </td>
+                          <td className="p-3 text-center">
+                            <button
+                              onClick={() => handleDeleteMaster(slot.id)}
+                              className="text-red-600 hover:text-red-800 text-xs px-2 py-1 border border-red-200 rounded hover:bg-red-50"
+                            >
+                              🗑️ 削除
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
