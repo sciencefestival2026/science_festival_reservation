@@ -3,14 +3,12 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
-// 型定義
 interface MasterSlot {
   id: number;
   event_date: string;
   booth_name: string;
   time_slot: string;
-  max_seats: number;
-  reserved_seats: number;
+  capacity?: number;
 }
 
 interface Entry {
@@ -20,46 +18,51 @@ interface Entry {
   booth_name: string;
   time_slot: string;
   num_people: number;
-  status: string;
+  status?: string;
   created_at: string;
 }
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<'entries' | 'master'>('entries');
   
-  // 予約データ状態
   const [entries, setEntries] = useState<Entry[]>([]);
-  
-  // マスターデータ状態
   const [masters, setMasters] = useState<MasterSlot[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // 新規マスター登録フォームの状態
+  // フォーム用ステート
   const [newEventDate, setNewEventDate] = useState('');
   const [newBoothName, setNewBoothName] = useState('');
   const [newTimeSlot, setNewTimeSlot] = useState('');
-  const [newMaxSeats, setNewMaxSeats] = useState(5);
+  const [newCapacity, setNewCapacity] = useState<number>(5);
 
-  // データ取得
+  // 全データ取得
   const fetchData = async () => {
     setLoading(true);
-    // 予約データ取得
+    
+    // 1. 予約エントリー取得
     const { data: entriesData, error: entriesErr } = await supabase
       .from('draw_entries')
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (entriesErr) console.error('予約データの取得に失敗:', entriesErr);
-    else setEntries(entriesData || []);
+    if (entriesErr) {
+      console.error('予約データの取得エラー:', entriesErr);
+    } else {
+      setEntries(entriesData || []);
+    }
 
-    // マスターデータ取得
+// マスターデータ取得（開催日 ➔ ブース名 ➔ 時間帯 で昇順ソート）
     const { data: masterData, error: masterErr } = await supabase
       .from('draw_master')
       .select('*')
-      .order('event_date', { ascending: true });
-
-    if (masterErr) console.error('マスターデータの取得に失敗:', masterErr);
-    else setMasters(masterData || []);
+      .order('event_date', { ascending: true })
+      .order('booth_name', { ascending: true })
+      .order('time_slot', { ascending: true });
+    if (masterErr) {
+      console.error('マスターデータの取得エラー:', masterErr);
+    } else {
+      setMasters(masterData || []);
+    }
 
     setLoading(false);
   };
@@ -68,57 +71,67 @@ export default function AdminPage() {
     fetchData();
   }, []);
 
-  // 【マスター】新規追加
+  // 【マスター新規登録】
   const handleAddMaster = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newEventDate || !newBoothName || !newTimeSlot) {
-      alert('すべての項目を入力してください');
+      alert('すべての必須項目を入力してください');
       return;
     }
 
+    // 正しいカラム名 "capacity" で追加
     const { error } = await supabase.from('draw_master').insert([
       {
         event_date: newEventDate,
         booth_name: newBoothName,
         time_slot: newTimeSlot,
-        max_seats: Number(newMaxSeats),
-        reserved_seats: 0,
+        capacity: Number(newCapacity),
       },
     ]);
 
     if (error) {
-      alert('追加に失敗しました: ' + error.message);
+      console.error('Insert Error Detail:', error);
+      alert(`【登録失敗】\nエラー内容: ${error.message}`);
     } else {
-      alert('マスターデータを追加しました');
-      // フォームリセット
+      alert('マスター枠を追加しました！');
       setNewBoothName('');
       setNewTimeSlot('');
       fetchData();
     }
   };
 
-  // 【マスター】削除
+  // 【マスター削除】
   const handleDeleteMaster = async (id: number) => {
-    if (!confirm('この枠を削除しますか？（※既に予約がある場合は影響が出ます）')) return;
+    if (!confirm('この枠を削除しますか？')) return;
 
     const { error } = await supabase.from('draw_master').delete().eq('id', id);
     if (error) {
-      alert('削除に失敗しました: ' + error.message);
+      alert('削除失敗: ' + error.message);
     } else {
       fetchData();
     }
   };
 
-  // 【予約】キャンセル・削除
+  // 【予約削除】
   const handleDeleteEntry = async (id: number) => {
     if (!confirm('この予約を取り消しますか？')) return;
 
     const { error } = await supabase.from('draw_entries').delete().eq('id', id);
     if (error) {
-      alert('削除に失敗しました: ' + error.message);
+      alert('削除失敗: ' + error.message);
     } else {
       fetchData();
     }
+  };
+
+  // 各枠の予約数を計算（draw_entriesのデータから集計）
+  const getReservedCount = (event_date: string, booth_name: string, time_slot: string) => {
+    return entries.filter(
+      (entry) =>
+        entry.event_date === event_date &&
+        entry.booth_name === booth_name &&
+        entry.time_slot === time_slot
+    ).reduce((sum, entry) => sum + (entry.num_people || 1), 0);
   };
 
   return (
@@ -192,7 +205,7 @@ export default function AdminPage() {
                         <td className="p-3">{item.time_slot}</td>
                         <td className="p-3">{item.num_people}名</td>
                         <td className="p-3 text-xs text-gray-500">
-                          {new Date(item.created_at).toLocaleString('ja-JP')}
+                          {item.created_at ? new Date(item.created_at).toLocaleString('ja-JP') : '-'}
                         </td>
                         <td className="p-3 text-center">
                           <button
@@ -257,8 +270,8 @@ export default function AdminPage() {
                     <input
                       type="number"
                       min="1"
-                      value={newMaxSeats}
-                      onChange={(e) => setNewMaxSeats(Number(e.target.value))}
+                      value={newCapacity}
+                      onChange={(e) => setNewCapacity(Number(e.target.value))}
                       className="w-full p-2 border rounded text-sm bg-white"
                       required
                     />
@@ -283,7 +296,7 @@ export default function AdminPage() {
                       <th className="p-3">ブース名</th>
                       <th className="p-3">時間帯</th>
                       <th className="p-3">定員</th>
-                      <th className="p-3">現在の予約数</th>
+                      <th className="p-3">予約状況</th>
                       <th className="p-3 text-center">操作</th>
                     </tr>
                   </thead>
@@ -295,33 +308,38 @@ export default function AdminPage() {
                         </td>
                       </tr>
                     ) : (
-                      masters.map((slot) => (
-                        <tr key={slot.id} className="hover:bg-gray-50">
-                          <td className="p-3">{slot.event_date}</td>
-                          <td className="p-3 font-semibold">{slot.booth_name}</td>
-                          <td className="p-3">{slot.time_slot}</td>
-                          <td className="p-3">{slot.max_seats}名</td>
-                          <td className="p-3">
-                            <span
-                              className={`px-2 py-0.5 rounded text-xs font-semibold ${
-                                slot.reserved_seats >= slot.max_seats
-                                  ? 'bg-red-100 text-red-700'
-                                  : 'bg-green-100 text-green-700'
-                              }`}
-                            >
-                              {slot.reserved_seats} / {slot.max_seats} 名
-                            </span>
-                          </td>
-                          <td className="p-3 text-center">
-                            <button
-                              onClick={() => handleDeleteMaster(slot.id)}
-                              className="text-red-600 hover:text-red-800 text-xs px-2 py-1 border border-red-200 rounded hover:bg-red-50"
-                            >
-                              🗑️ 削除
-                            </button>
-                          </td>
-                        </tr>
-                      ))
+                      masters.map((slot) => {
+                        const cap = slot.capacity ?? 0;
+                        const reserved = getReservedCount(slot.event_date, slot.booth_name, slot.time_slot);
+
+                        return (
+                          <tr key={slot.id} className="hover:bg-gray-50">
+                            <td className="p-3">{slot.event_date}</td>
+                            <td className="p-3 font-semibold">{slot.booth_name}</td>
+                            <td className="p-3">{slot.time_slot}</td>
+                            <td className="p-3">{cap}名</td>
+                            <td className="p-3">
+                              <span
+                                className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                                  reserved >= cap && cap > 0
+                                    ? 'bg-red-100 text-red-700'
+                                    : 'bg-green-100 text-green-700'
+                                }`}
+                              >
+                                {reserved} / {cap} 名
+                              </span>
+                            </td>
+                            <td className="p-3 text-center">
+                              <button
+                                onClick={() => handleDeleteMaster(slot.id)}
+                                className="text-red-600 hover:text-red-800 text-xs px-2 py-1 border border-red-200 rounded hover:bg-red-50"
+                              >
+                                🗑️ 削除
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
