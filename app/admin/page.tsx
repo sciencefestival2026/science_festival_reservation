@@ -66,7 +66,6 @@ export default function AdminPage() {
     if (masterErr) {
       console.error('マスターデータの取得エラー:', masterErr);
     } else {
-      // 開催日 ➔ ブース名 ➔ 時間帯（数値順）でソートしてセット
       const sortedMaster = (masterData || []).sort((a, b) => {
         if (a.event_date !== b.event_date) {
           return a.event_date.localeCompare(b.event_date);
@@ -171,6 +170,45 @@ export default function AdminPage() {
     return matchDate && matchBooth;
   });
 
+  // 共通フィルターコンポーネント
+  const FilterUI = () => (
+    <div className="bg-gray-50 p-4 rounded-lg border flex flex-wrap gap-4 items-center">
+      <span className="text-xs font-bold text-gray-700">🔍 一覧の絞り込み:</span>
+      <div>
+        <select
+          value={filterDate}
+          onChange={(e) => setFilterDate(e.target.value)}
+          className="p-2 border rounded text-xs bg-white font-medium"
+        >
+          <option value="">すべての開催日</option>
+          {availableDates.map(d => (
+            <option key={d} value={d}>{d}</option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <select
+          value={filterBooth}
+          onChange={(e) => setFilterBooth(e.target.value)}
+          className="p-2 border rounded text-xs bg-white font-medium"
+        >
+          <option value="">すべてのブース</option>
+          {availableBooths.map(b => (
+            <option key={b} value={b}>{b}</option>
+          ))}
+        </select>
+      </div>
+      {(filterDate || filterBooth) && (
+        <button
+          onClick={() => { setFilterDate(''); setFilterBooth(''); }}
+          className="text-xs text-blue-600 font-bold hover:underline"
+        >
+          条件をクリア
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-6">
       <div className="flex justify-between items-center border-b pb-4">
@@ -207,93 +245,59 @@ export default function AdminPage() {
         </button>
       </div>
 
-      {/* 共通絞り込みフィルター */}
-      <div className="bg-gray-50 p-4 rounded-lg border flex flex-wrap gap-4 items-center">
-        <span className="text-xs font-bold text-gray-700">🔍 表示絞り込み:</span>
-        <div>
-          <select
-            value={filterDate}
-            onChange={(e) => setFilterDate(e.target.value)}
-            className="p-2 border rounded text-xs bg-white font-medium"
-          >
-            <option value="">すべての開催日</option>
-            {availableDates.map(d => (
-              <option key={d} value={d}>{d}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <select
-            value={filterBooth}
-            onChange={(e) => setFilterBooth(e.target.value)}
-            className="p-2 border rounded text-xs bg-white font-medium"
-          >
-            <option value="">すべてのブース</option>
-            {availableBooths.map(b => (
-              <option key={b} value={b}>{b}</option>
-            ))}
-          </select>
-        </div>
-        {(filterDate || filterBooth) && (
-          <button
-            onClick={() => { setFilterDate(''); setFilterBooth(''); }}
-            className="text-xs text-blue-600 font-bold hover:underline"
-          >
-            条件をクリア
-          </button>
-        )}
-      </div>
-
       {loading ? (
         <p className="text-gray-500 text-center py-8">データを読み込み中...</p>
       ) : (
         <>
           {/* ----- タブ1: 予約一覧 ----- */}
           {activeTab === 'entries' && (
-            <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-gray-50 border-b">
-                  <tr>
-                    <th className="p-3">日時</th>
-                    <th className="p-3">お名前</th>
-                    <th className="p-3">ブース</th>
-                    <th className="p-3">時間帯</th>
-                    <th className="p-3">人数</th>
-                    <th className="p-3">受付日時</th>
-                    <th className="p-3 text-center">操作</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {filteredEntries.length === 0 ? (
+            <div className="space-y-4">
+              <FilterUI />
+              <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-gray-50 border-b">
                     <tr>
-                      <td colSpan={7} className="p-4 text-center text-gray-500">
-                        該当する予約データはありません
-                      </td>
+                      <th className="p-3">日時</th>
+                      <th className="p-3">お名前</th>
+                      <th className="p-3">ブース</th>
+                      <th className="p-3">時間帯</th>
+                      <th className="p-3">人数</th>
+                      <th className="p-3">受付日時</th>
+                      <th className="p-3 text-center">操作</th>
                     </tr>
-                  ) : (
-                    filteredEntries.map((item) => (
-                      <tr key={item.id} className="hover:bg-gray-50">
-                        <td className="p-3">{item.event_date}</td>
-                        <td className="p-3 font-semibold">{item.user_name}</td>
-                        <td className="p-3">{item.booth_name}</td>
-                        <td className="p-3">{item.time_slot}</td>
-                        <td className="p-3">{item.num_people}名</td>
-                        <td className="p-3 text-xs text-gray-500">
-                          {item.created_at ? new Date(item.created_at).toLocaleString('ja-JP') : '-'}
-                        </td>
-                        <td className="p-3 text-center">
-                          <button
-                            onClick={() => handleDeleteEntry(item.id)}
-                            className="text-red-600 hover:text-red-800 text-xs px-2 py-1 border border-red-200 rounded hover:bg-red-50"
-                          >
-                            🗑️ 削除
-                          </button>
+                  </thead>
+                  <tbody className="divide-y">
+                    {filteredEntries.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="p-4 text-center text-gray-500">
+                          該当する予約データはありません
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                    ) : (
+                      filteredEntries.map((item) => (
+                        <tr key={item.id} className="hover:bg-gray-50">
+                          <td className="p-3">{item.event_date}</td>
+                          <td className="p-3 font-semibold">{item.user_name}</td>
+                          <td className="p-3">{item.booth_name}</td>
+                          <td className="p-3">{item.time_slot}</td>
+                          <td className="p-3">{item.num_people}名</td>
+                          <td className="p-3 text-xs text-gray-500">
+                            {item.created_at ? new Date(item.created_at).toLocaleString('ja-JP') : '-'}
+                          </td>
+                          <td className="p-3 text-center">
+                            <button
+                              onClick={() => handleDeleteEntry(item.id)}
+                              className="text-red-600 hover:text-red-800 text-xs px-2 py-1 border border-red-200 rounded hover:bg-red-50"
+                            >
+                              🗑️ 削除
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
@@ -361,42 +365,8 @@ export default function AdminPage() {
                 </div>
               </form>
 
-              {/* 2. 表示絞り込みフィルター（新規追加フォームの下に配置） */}
-              <div className="bg-gray-50 p-4 rounded-lg border flex flex-wrap gap-4 items-center">
-                <span className="text-xs font-bold text-gray-700">🔍 一覧の絞り込み:</span>
-                <div>
-                  <select
-                    value={filterDate}
-                    onChange={(e) => setFilterDate(e.target.value)}
-                    className="p-2 border rounded text-xs bg-white font-medium"
-                  >
-                    <option value="">すべての開催日</option>
-                    {availableDates.map(d => (
-                      <option key={d} value={d}>{d}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <select
-                    value={filterBooth}
-                    onChange={(e) => setFilterBooth(e.target.value)}
-                    className="p-2 border rounded text-xs bg-white font-medium"
-                  >
-                    <option value="">すべてのブース</option>
-                    {availableBooths.map(b => (
-                      <option key={b} value={b}>{b}</option>
-                    ))}
-                  </select>
-                </div>
-                {(filterDate || filterBooth) && (
-                  <button
-                    onClick={() => { setFilterDate(''); setFilterBooth(''); }}
-                    className="text-xs text-blue-600 font-bold hover:underline"
-                  >
-                    条件をクリア
-                  </button>
-                )}
-              </div>
+              {/* 2. 表示絞り込みフィルター（枠追加フォームの下に配置） */}
+              <FilterUI />
 
               {/* 3. マスターデータ一覧 */}
               <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
