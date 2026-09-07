@@ -57,13 +57,33 @@ const loadInitialData = async () => {
     loadInitialData();
   }, []);
 
-  const dateOptions = Array.from(new Set(masterData.map(d => d.event_date)));
+  // --- 過去日時判定ロジック ---
+  const isPastSlot = (eventDate: string, timeSlot: string) => {
+    const now = new Date();
+
+    // 時間帯（例: "10:00-11:00" や "10:00"）から開始時刻 "10:00" を抽出
+    const startTimeStr = timeSlot.split('-')[0].trim();
+    
+    // イベントの開始日時オブジェクトを作成
+    const slotDateTime = new Date(`${eventDate}T${startTimeStr.padStart(5, '0')}:00`);
+
+    // 現在時刻より前なら true（過去枠）
+    return slotDateTime < now;
+  };
+
+  // 1. 未来の枠（未終了の枠）のみにフィルタリング
+  const validMasterData = masterData.filter(d => !isPastSlot(d.event_date, d.time_slot));
+
+  // 2. プルダウン選択肢の生成（有効な枠のみを基準にする）
+  const dateOptions = Array.from(new Set(validMasterData.map(d => d.event_date)));
+
   const boothOptions = Array.from(
-    new Set(masterData.filter(d => d.event_date === selectedDate).map(d => d.booth_name))
+    new Set(validMasterData.filter(d => d.event_date === selectedDate).map(d => d.booth_name))
   );
-  const slotOptions = masterData
-      .filter(d => d.event_date === selectedDate && d.booth_name === selectedBooth)
-      .sort((a, b) => a.time_slot.localeCompare(b.time_slot, undefined, { numeric: true }));
+
+  const slotOptions = validMasterData
+    .filter(d => d.event_date === selectedDate && d.booth_name === selectedBooth)
+    .sort((a, b) => a.time_slot.localeCompare(b.time_slot, undefined, { numeric: true }));
 
   // 選択中の枠の「現在の予約済み人数」を取得
   const getCurrentAppliedCount = () => {
@@ -86,6 +106,16 @@ const loadInitialData = async () => {
     
     setIsSubmitting(true);
     setErrorMessage('');
+
+    // ★ 押下時点での過去日時チェック（画面開きっぱなし対策）
+    if (isPastSlot(selectedSlot.event_date, selectedSlot.time_slot)) {
+      setErrorMessage('申し訳ありません。対象の時間帯を過ぎたため予約できません。');
+      setIsSubmitting(false);
+      // 最新状態を再取得して過去枠を画面から除外
+      await loadInitialData();
+      setSelectedSlot(null);
+      return;
+    }
 
     // 最新の予約状況を再確認（タッチ差での定員オーバーを防止）
     const { data: latestEntries } = await supabase
