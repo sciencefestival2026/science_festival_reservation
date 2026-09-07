@@ -35,11 +35,12 @@ export default function Home() {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
 
-  const loadInitialData = async () => {
+const loadInitialData = async () => {
     const { data: master } = await supabase
       .from('draw_master')
       .select('*')
       .order('event_date', { ascending: true })
+      .order('booth_name', { ascending: true }) 
       .order('time_slot', { ascending: true });
 
     const { data: entries } = await supabase
@@ -60,9 +61,9 @@ export default function Home() {
   const boothOptions = Array.from(
     new Set(masterData.filter(d => d.event_date === selectedDate).map(d => d.booth_name))
   );
-  const slotOptions = masterData.filter(
-    d => d.event_date === selectedDate && d.booth_name === selectedBooth
-  );
+  const slotOptions = masterData
+      .filter(d => d.event_date === selectedDate && d.booth_name === selectedBooth)
+      .sort((a, b) => a.time_slot.localeCompare(b.time_slot, undefined, { numeric: true }));
 
   // 選択中の枠の「現在の予約済み人数」を取得
   const getCurrentAppliedCount = () => {

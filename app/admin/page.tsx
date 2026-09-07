@@ -61,7 +61,21 @@ export default function AdminPage() {
     if (masterErr) {
       console.error('マスターデータの取得エラー:', masterErr);
     } else {
-      setMasters(masterData || []);
+      // 開催日 ➔ ブース名 ➔ 時間帯（数値順）でソートしてセット
+      const sortedMaster = (masterData || []).sort((a, b) => {
+        // 1. 開催日で比較
+        if (a.event_date !== b.event_date) {
+          return a.event_date.localeCompare(b.event_date);
+        }
+        // 2. ブース名で比較
+        if (a.booth_name !== b.booth_name) {
+          return a.booth_name.localeCompare(b.booth_name, undefined, { numeric: true });
+        }
+        // 3. 時間帯で比較（9:00と10:00を正しく判定）
+        return a.time_slot.localeCompare(b.time_slot, undefined, { numeric: true });
+      });
+
+      setMasters(sortedMaster);
     }
 
     setLoading(false);
