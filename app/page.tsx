@@ -35,12 +35,12 @@ export default function Home() {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
 
-const loadInitialData = async () => {
+  const loadInitialData = async () => {
     const { data: master } = await supabase
       .from('draw_master')
       .select('*')
       .order('event_date', { ascending: true })
-      .order('booth_name', { ascending: true }) 
+      .order('booth_name', { ascending: true })
       .order('time_slot', { ascending: true });
 
     const { data: entries } = await supabase
@@ -57,21 +57,25 @@ const loadInitialData = async () => {
     loadInitialData();
   }, []);
 
-  // --- 過去日時判定ロジック ---
+  // --- 過去日時判定ロジック（タイムゾーン安全版） ---
   const isPastSlot = (eventDate: string, timeSlot: string) => {
     const now = new Date();
 
-    // 時間帯（例: "10:00-11:00" や "10:00"）から開始時刻 "10:00" を抽出
-    const startTimeStr = timeSlot.split('-')[0].trim();
-    
-    // イベントの開始日時オブジェクトを作成
-    const slotDateTime = new Date(`${eventDate}T${startTimeStr.padStart(5, '0')}:00`);
+    // 1. eventDate ("YYYY-MM-DD") を分解
+    const [year, month, day] = eventDate.split('-').map(Number);
 
-    // 現在時刻より前なら true（過去枠）
-    return slotDateTime < now;
+    // 2. timeSlot ("20:01-20:20" または "20:01") から開始時刻 "20:01" を抽出して分解
+    const startTimeStr = timeSlot.split('-')[0].trim();
+    const [hour, minute] = startTimeStr.split(':').map(Number);
+
+    // 3. ローカル時間として Date オブジェクトを作成 (月は 0 始まりなので month - 1)
+    const slotDateTime = new Date(year, month - 1, day, hour || 0, minute || 0, 0);
+
+    // 現在時刻より前（または同時刻）であれば true（過去枠）
+    return slotDateTime <= now;
   };
 
-  // 1. 未来の枠（未終了の枠）のみにフィルタリング
+  // 1. 未来の枠（開始時刻が過ぎていない枠）のみにフィルタリング
   const validMasterData = masterData.filter(d => !isPastSlot(d.event_date, d.time_slot));
 
   // 2. プルダウン選択肢の生成（有効な枠のみを基準にする）
@@ -107,9 +111,9 @@ const loadInitialData = async () => {
     setIsSubmitting(true);
     setErrorMessage('');
 
-    // ★ 押下時点での過去日時チェック（画面開きっぱなし対策）
+    // ★ 押下時点での過去日時チェック（リアルタイム再確認）
     if (isPastSlot(selectedSlot.event_date, selectedSlot.time_slot)) {
-      setErrorMessage('申し訳ありません。対象の時間帯を過ぎたため予約できません。');
+      setErrorMessage('申し訳ありません。対象の時間帯の受付時間を過ぎたため予約できません。');
       setIsSubmitting(false);
       // 最新状態を再取得して過去枠を画面から除外
       await loadInitialData();
