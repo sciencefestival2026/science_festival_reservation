@@ -68,11 +68,15 @@ export default function Home() {
     const startTimeStr = timeSlot.split('-')[0].trim();
     const [hour, minute] = startTimeStr.split(':').map(Number);
 
-    // 3. ローカル時間として Date オブジェクトを作成 (月は 0 始まりなので month - 1)
+    // 3. ローカル時間として Date オブジェクトを作成
     const slotDateTime = new Date(year, month - 1, day, hour || 0, minute || 0, 0);
 
-    // 現在時刻より前（または同時刻）であれば true（過去枠）
-    return slotDateTime <= now;
+    // ★ 5分前締め切り計算 (5分 = 5 * 60 * 1000ミリ秒)
+    const deadlineMinutes = 5;
+    const deadlineTime = new Date(slotDateTime.getTime() - deadlineMinutes * 60 * 1000);
+
+    // 締切時刻を過ぎていたら true（非表示・予約不可）
+    return deadlineTime <= now;
   };
 
   // 1. 未来の枠（開始時刻が過ぎていない枠）のみにフィルタリング
@@ -196,6 +200,7 @@ export default function Home() {
           <div className="font-bold">【ご応募に際しての注意事項】</div>
           <p>・お名前は当日の呼び出しにのみ使用いたします。</p>
           <p>・本予約は「先着順」です。定員に達し次第受付終了となります。</p>
+          <p>・各時間帯の【5分前】に予約受付を締め切ります。</p>
           <p>・予約完了後の変更・キャンセルはできません。</p>
         </div>
 

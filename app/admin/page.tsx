@@ -29,6 +29,10 @@ export default function AdminPage() {
   const [masters, setMasters] = useState<MasterSlot[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
+  // フィルター用ステート
+  const [filterDate, setFilterDate] = useState<string>('');
+  const [filterBooth, setFilterBooth] = useState<string>('');
+
   // フォーム用ステート
   const [newEventDate, setNewEventDate] = useState('');
   const [newBoothName, setNewBoothName] = useState('');
@@ -51,27 +55,25 @@ export default function AdminPage() {
       setEntries(entriesData || []);
     }
 
-// マスターデータ取得（開催日 ➔ ブース名 ➔ 時間帯 で昇順ソート）
+    // マスターデータ取得（開催日 ➔ ブース名 ➔ 時間帯 で昇順ソート）
     const { data: masterData, error: masterErr } = await supabase
       .from('draw_master')
       .select('*')
       .order('event_date', { ascending: true })
       .order('booth_name', { ascending: true })
       .order('time_slot', { ascending: true });
+
     if (masterErr) {
       console.error('マスターデータの取得エラー:', masterErr);
     } else {
       // 開催日 ➔ ブース名 ➔ 時間帯（数値順）でソートしてセット
       const sortedMaster = (masterData || []).sort((a, b) => {
-        // 1. 開催日で比較
         if (a.event_date !== b.event_date) {
           return a.event_date.localeCompare(b.event_date);
         }
-        // 2. ブース名で比較
         if (a.booth_name !== b.booth_name) {
           return a.booth_name.localeCompare(b.booth_name, undefined, { numeric: true });
         }
-        // 3. 時間帯で比較（9:00と10:00を正しく判定）
         return a.time_slot.localeCompare(b.time_slot, undefined, { numeric: true });
       });
 
@@ -93,7 +95,6 @@ export default function AdminPage() {
       return;
     }
 
-    // 正しいカラム名 "capacity" で追加
     const { error } = await supabase.from('draw_master').insert([
       {
         event_date: newEventDate,
@@ -148,6 +149,28 @@ export default function AdminPage() {
     ).reduce((sum, entry) => sum + (entry.num_people || 1), 0);
   };
 
+  // --- フィルター用オプション生成 ---
+  const availableDates = Array.from(
+    new Set([...masters.map(m => m.event_date), ...entries.map(e => e.event_date)])
+  ).filter(Boolean).sort();
+
+  const availableBooths = Array.from(
+    new Set([...masters.map(m => m.booth_name), ...entries.map(e => e.booth_name)])
+  ).filter(Boolean).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+  // --- 絞り込み処理 ---
+  const filteredEntries = entries.filter(item => {
+    const matchDate = filterDate ? item.event_date === filterDate : true;
+    const matchBooth = filterBooth ? item.booth_name === filterBooth : true;
+    return matchDate && matchBooth;
+  });
+
+  const filteredMasters = masters.filter(item => {
+    const matchDate = filterDate ? item.event_date === filterDate : true;
+    const matchBooth = filterBooth ? item.booth_name === filterBooth : true;
+    return matchDate && matchBooth;
+  });
+
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-6">
       <div className="flex justify-between items-center border-b pb-4">
@@ -170,7 +193,7 @@ export default function AdminPage() {
           }`}
           onClick={() => setActiveTab('entries')}
         >
-          📋 予約一覧 ({entries.length}件)
+          📋 予約一覧 ({filteredEntries.length} / {entries.length}件)
         </button>
         <button
           className={`py-2 px-4 font-semibold border-b-2 ${
@@ -180,8 +203,45 @@ export default function AdminPage() {
           }`}
           onClick={() => setActiveTab('master')}
         >
-          ⚙️ マスター枠管理 ({masters.length}件)
+          ⚙️ マスター枠管理 ({filteredMasters.length} / {masters.length}件)
         </button>
+      </div>
+
+      {/* 共通絞り込みフィルター */}
+      <div className="bg-gray-50 p-4 rounded-lg border flex flex-wrap gap-4 items-center">
+        <span className="text-xs font-bold text-gray-700">🔍 表示絞り込み:</span>
+        <div>
+          <select
+            value={filterDate}
+            onChange={(e) => setFilterDate(e.target.value)}
+            className="p-2 border rounded text-xs bg-white font-medium"
+          >
+            <option value="">すべての開催日</option>
+            {availableDates.map(d => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <select
+            value={filterBooth}
+            onChange={(e) => setFilterBooth(e.target.value)}
+            className="p-2 border rounded text-xs bg-white font-medium"
+          >
+            <option value="">すべてのブース</option>
+            {availableBooths.map(b => (
+              <option key={b} value={b}>{b}</option>
+            ))}
+          </select>
+        </div>
+        {(filterDate || filterBooth) && (
+          <button
+            onClick={() => { setFilterDate(''); setFilterBooth(''); }}
+            className="text-xs text-blue-600 font-bold hover:underline"
+          >
+            条件をクリア
+          </button>
+        )}
       </div>
 
       {loading ? (
@@ -204,14 +264,14 @@ export default function AdminPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {entries.length === 0 ? (
+                  {filteredEntries.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="p-4 text-center text-gray-500">
-                        予約データはありません
+                        該当する予約データはありません
                       </td>
                     </tr>
                   ) : (
-                    entries.map((item) => (
+                    filteredEntries.map((item) => (
                       <tr key={item.id} className="hover:bg-gray-50">
                         <td className="p-3">{item.event_date}</td>
                         <td className="p-3 font-semibold">{item.user_name}</td>
@@ -240,7 +300,7 @@ export default function AdminPage() {
           {/* ----- タブ2: マスター枠管理 ----- */}
           {activeTab === 'master' && (
             <div className="space-y-6">
-              {/* 新規追加フォーム */}
+              {/* 1. 新規追加フォーム */}
               <form
                 onSubmit={handleAddMaster}
                 className="bg-blue-50 border border-blue-100 rounded-lg p-4 space-y-4"
@@ -301,7 +361,44 @@ export default function AdminPage() {
                 </div>
               </form>
 
-              {/* マスターデータ一覧 */}
+              {/* 2. 表示絞り込みフィルター（新規追加フォームの下に配置） */}
+              <div className="bg-gray-50 p-4 rounded-lg border flex flex-wrap gap-4 items-center">
+                <span className="text-xs font-bold text-gray-700">🔍 一覧の絞り込み:</span>
+                <div>
+                  <select
+                    value={filterDate}
+                    onChange={(e) => setFilterDate(e.target.value)}
+                    className="p-2 border rounded text-xs bg-white font-medium"
+                  >
+                    <option value="">すべての開催日</option>
+                    {availableDates.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <select
+                    value={filterBooth}
+                    onChange={(e) => setFilterBooth(e.target.value)}
+                    className="p-2 border rounded text-xs bg-white font-medium"
+                  >
+                    <option value="">すべてのブース</option>
+                    {availableBooths.map(b => (
+                      <option key={b} value={b}>{b}</option>
+                    ))}
+                  </select>
+                </div>
+                {(filterDate || filterBooth) && (
+                  <button
+                    onClick={() => { setFilterDate(''); setFilterBooth(''); }}
+                    className="text-xs text-blue-600 font-bold hover:underline"
+                  >
+                    条件をクリア
+                  </button>
+                )}
+              </div>
+
+              {/* 3. マスターデータ一覧 */}
               <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
                 <table className="w-full text-left text-sm">
                   <thead className="bg-gray-50 border-b">
@@ -315,14 +412,14 @@ export default function AdminPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {masters.length === 0 ? (
+                    {filteredMasters.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="p-4 text-center text-gray-500">
-                          枠データが登録されていません
+                          該当する枠データがありません
                         </td>
                       </tr>
                     ) : (
-                      masters.map((slot) => {
+                      filteredMasters.map((slot) => {
                         const cap = slot.capacity ?? 0;
                         const reserved = getReservedCount(slot.event_date, slot.booth_name, slot.time_slot);
 
