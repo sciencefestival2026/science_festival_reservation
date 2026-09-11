@@ -9,6 +9,7 @@ interface MasterSlot {
   booth_name: string;
   time_slot: string;
   capacity?: number;
+  booking_start_at?: string;
 }
 
 interface Entry {
@@ -29,6 +30,9 @@ export default function AdminPage() {
   const [masters, setMasters] = useState<MasterSlot[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
+  // 枠追加フォームの折りたたみステート
+  const [showAddForm, setShowAddForm] = useState<boolean>(false);
+
   // フィルター用ステート
   const [filterDate, setFilterDate] = useState<string>('');
   const [filterBooth, setFilterBooth] = useState<string>('');
@@ -38,6 +42,7 @@ export default function AdminPage() {
   const [newBoothName, setNewBoothName] = useState('');
   const [newTimeSlot, setNewTimeSlot] = useState('');
   const [newCapacity, setNewCapacity] = useState<number>(5);
+  const [newBookingStartAt, setNewBookingStartAt] = useState('');
 
   // 全データ取得
   const fetchData = async () => {
@@ -55,7 +60,7 @@ export default function AdminPage() {
       setEntries(entriesData || []);
     }
 
-    // マスターデータ取得（開催日 ➔ ブース名 ➔ 時間帯 で昇順ソート）
+    // 2. マスターデータ取得
     const { data: masterData, error: masterErr } = await supabase
       .from('draw_master')
       .select('*')
@@ -67,12 +72,8 @@ export default function AdminPage() {
       console.error('マスターデータの取得エラー:', masterErr);
     } else {
       const sortedMaster = (masterData || []).sort((a, b) => {
-        if (a.event_date !== b.event_date) {
-          return a.event_date.localeCompare(b.event_date);
-        }
-        if (a.booth_name !== b.booth_name) {
-          return a.booth_name.localeCompare(b.booth_name, undefined, { numeric: true });
-        }
+        if (a.event_date !== b.event_date) return a.event_date.localeCompare(b.event_date);
+        if (a.booth_name !== b.booth_name) return a.booth_name.localeCompare(b.booth_name, undefined, { numeric: true });
         return a.time_slot.localeCompare(b.time_slot, undefined, { numeric: true });
       });
 
@@ -100,6 +101,7 @@ export default function AdminPage() {
         booth_name: newBoothName,
         time_slot: newTimeSlot,
         capacity: Number(newCapacity),
+        booking_start_at: newBookingStartAt ? new Date(newBookingStartAt).toISOString() : null,
       },
     ]);
 
@@ -108,8 +110,8 @@ export default function AdminPage() {
       alert(`【登録失敗】\nエラー内容: ${error.message}`);
     } else {
       alert('マスター枠を追加しました！');
-      setNewBoothName('');
-      setNewTimeSlot('');
+      // 開催日(newEventDate)、ブース名(newBoothName)、定員(newCapacity)、予約開始日時(newBookingStartAt) はそのまま保持
+      setNewTimeSlot(''); // 時間帯のみクリアして次の枠入力をスムーズにする
       fetchData();
     }
   };
@@ -138,7 +140,7 @@ export default function AdminPage() {
     }
   };
 
-  // 各枠の予約数を計算（draw_entriesのデータから集計）
+  // 各枠の予約数を計算
   const getReservedCount = (event_date: string, booth_name: string, time_slot: string) => {
     return entries.filter(
       (entry) =>
@@ -221,10 +223,10 @@ export default function AdminPage() {
         </button>
       </div>
 
-      {/* タブ切り替え */}
+      {/* タブ切り替え（上部選択） */}
       <div className="flex space-x-4 border-b">
         <button
-          className={`py-2 px-4 font-semibold border-b-2 ${
+          className={`py-2 px-4 font-semibold border-b-2 transition ${
             activeTab === 'entries'
               ? 'border-blue-600 text-blue-600'
               : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -234,7 +236,7 @@ export default function AdminPage() {
           📋 予約一覧 ({filteredEntries.length} / {entries.length}件)
         </button>
         <button
-          className={`py-2 px-4 font-semibold border-b-2 ${
+          className={`py-2 px-4 font-semibold border-b-2 transition ${
             activeTab === 'master'
               ? 'border-blue-600 text-blue-600'
               : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -304,71 +306,97 @@ export default function AdminPage() {
           {/* ----- タブ2: マスター枠管理 ----- */}
           {activeTab === 'master' && (
             <div className="space-y-6">
-              {/* 1. 新規追加フォーム */}
-              <form
-                onSubmit={handleAddMaster}
-                className="bg-blue-50 border border-blue-100 rounded-lg p-4 space-y-4"
-              >
-                <h2 className="font-bold text-blue-900 text-sm">＋ 新しい枠を追加する</h2>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div>
-                    <label className="block text-xs text-gray-600 mb-1">開催日</label>
-                    <input
-                      type="date"
-                      value={newEventDate}
-                      onChange={(e) => setNewEventDate(e.target.value)}
-                      className="w-full p-2 border rounded text-sm bg-white"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-600 mb-1">ブース名</label>
-                    <input
-                      type="text"
-                      placeholder="例: Aブース"
-                      value={newBoothName}
-                      onChange={(e) => setNewBoothName(e.target.value)}
-                      className="w-full p-2 border rounded text-sm bg-white"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-600 mb-1">時間帯</label>
-                    <input
-                      type="text"
-                      placeholder="例: 10:00-11:00"
-                      value={newTimeSlot}
-                      onChange={(e) => setNewTimeSlot(e.target.value)}
-                      className="w-full p-2 border rounded text-sm bg-white"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-600 mb-1">定員（名）</label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={newCapacity}
-                      onChange={(e) => setNewCapacity(Number(e.target.value))}
-                      className="w-full p-2 border rounded text-sm bg-white"
-                      required
-                    />
-                  </div>
-                </div>
-                <div className="text-right">
-                  <button
-                    type="submit"
-                    className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-semibold hover:bg-blue-700 transition"
-                  >
-                    枠を追加登録
-                  </button>
-                </div>
-              </form>
+              {/* 1. 折りたたみ式：新規追加フォーム */}
+              <div className="bg-white border border-blue-200 rounded-lg overflow-hidden shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => setShowAddForm(!showAddForm)}
+                  className="w-full p-4 text-left font-bold text-blue-900 bg-blue-50 hover:bg-blue-100 flex justify-between items-center transition"
+                >
+                  <span className="flex items-center space-x-2">
+                    <span>{showAddForm ? '✕' : '＋'}</span>
+                    <span>新しい枠を追加する</span>
+                  </span>
+                  <span className="text-xs text-blue-600 font-normal">
+                    {showAddForm ? '閉じる' : 'クリックして入力フォームを開く'}
+                  </span>
+                </button>
 
-              {/* 2. 表示絞り込みフィルター（枠追加フォームの下に配置） */}
+                {showAddForm && (
+                  <form
+                    onSubmit={handleAddMaster}
+                    className="p-4 space-y-4 bg-white border-t border-blue-100"
+                  >
+                    <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1">開催日 <span className="text-red-500">*</span></label>
+                        <input
+                          type="date"
+                          value={newEventDate}
+                          onChange={(e) => setNewEventDate(e.target.value)}
+                          className="w-full p-2 border rounded text-sm bg-white"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1">ブース名 <span className="text-red-500">*</span></label>
+                        <input
+                          type="text"
+                          placeholder="例: Aブース"
+                          value={newBoothName}
+                          onChange={(e) => setNewBoothName(e.target.value)}
+                          className="w-full p-2 border rounded text-sm bg-white"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1">時間帯 <span className="text-red-500">*</span></label>
+                        <input
+                          type="text"
+                          placeholder="例: 10:00-11:00"
+                          value={newTimeSlot}
+                          onChange={(e) => setNewTimeSlot(e.target.value)}
+                          className="w-full p-2 border rounded text-sm bg-white"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1">定員（名） <span className="text-red-500">*</span></label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={newCapacity}
+                          onChange={(e) => setNewCapacity(Number(e.target.value))}
+                          className="w-full p-2 border rounded text-sm bg-white"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1">予約開始日時（任意）</label>
+                        <input
+                          type="datetime-local"
+                          value={newBookingStartAt}
+                          onChange={(e) => setNewBookingStartAt(e.target.value)}
+                          className="w-full p-2 border rounded text-sm bg-white"
+                        />
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <button
+                        type="submit"
+                        className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-semibold hover:bg-blue-700 transition"
+                      >
+                        枠を追加登録
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+
+              {/* 2. 表示絞り込みフィルター */}
               <FilterUI />
 
-              {/* 3. マスターデータ一覧 */}
+              {/* 3. マスターデータ一覧 ＆ 人数超過エラー判定 */}
               <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
                 <table className="w-full text-left text-sm">
                   <thead className="bg-gray-50 border-b">
@@ -377,6 +405,7 @@ export default function AdminPage() {
                       <th className="p-3">ブース名</th>
                       <th className="p-3">時間帯</th>
                       <th className="p-3">定員</th>
+                      <th className="p-3">予約受付開始</th>
                       <th className="p-3">予約状況</th>
                       <th className="p-3 text-center">操作</th>
                     </tr>
@@ -384,7 +413,7 @@ export default function AdminPage() {
                   <tbody className="divide-y">
                     {filteredMasters.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="p-4 text-center text-gray-500">
+                        <td colSpan={7} className="p-4 text-center text-gray-500">
                           該当する枠データがありません
                         </td>
                       </tr>
@@ -392,23 +421,45 @@ export default function AdminPage() {
                       filteredMasters.map((slot) => {
                         const cap = slot.capacity ?? 0;
                         const reserved = getReservedCount(slot.event_date, slot.booth_name, slot.time_slot);
+                        const isOverCapacity = reserved > cap; // 人数超過フラグ
 
                         return (
-                          <tr key={slot.id} className="hover:bg-gray-50">
+                          <tr key={slot.id} className={isOverCapacity ? 'bg-red-50' : 'hover:bg-gray-50'}>
                             <td className="p-3">{slot.event_date}</td>
                             <td className="p-3 font-semibold">{slot.booth_name}</td>
                             <td className="p-3">{slot.time_slot}</td>
                             <td className="p-3">{cap}名</td>
+                            <td className="p-3 text-xs text-gray-600">
+                              {slot.booking_start_at
+                                ? new Date(slot.booking_start_at).toLocaleString('ja-JP', {
+                                    month: 'numeric',
+                                    day: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })
+                                : '制限なし'}
+                            </td>
                             <td className="p-3">
-                              <span
-                                className={`px-2 py-0.5 rounded text-xs font-semibold ${
-                                  reserved >= cap && cap > 0
-                                    ? 'bg-red-100 text-red-700'
-                                    : 'bg-green-100 text-green-700'
-                                }`}
-                              >
-                                {reserved} / {cap} 名
-                              </span>
+                              <div className="flex items-center space-x-2">
+                                <span
+                                  className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                                    isOverCapacity
+                                      ? 'bg-red-100 text-red-800 font-bold'
+                                      : reserved === cap && cap > 0
+                                      ? 'bg-amber-100 text-amber-800'
+                                      : 'bg-green-100 text-green-700'
+                                  }`}
+                                >
+                                  {reserved} / {cap} 名
+                                </span>
+                                
+                                {/* 人数超過エラー表示 */}
+                                {isOverCapacity && (
+                                  <span className="px-2 py-0.5 bg-red-600 text-white text-xs font-bold rounded-full animate-pulse">
+                                    人数超過エラー
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="p-3 text-center">
                               <button
