@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
+const TARGET_BOOTH = 'トンボ玉';
+
 interface MasterSlot {
   id: number;
   booth_name: string;
@@ -20,7 +22,7 @@ interface Entry {
   status: string;
 }
 
-export default function Home() {
+export default function TonbodamaBooking() {
   const [masterData, setMasterData] = useState<MasterSlot[]>([]);
   const [allEntries, setAllEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -28,7 +30,6 @@ export default function Home() {
   
   const [userName, setUserName] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState<string>('');
-  const [selectedBooth, setSelectedBooth] = useState<string>('');
   const [selectedSlot, setSelectedSlot] = useState<MasterSlot | null>(null);
   const [numPeople, setNumPeople] = useState<number>(1);
   
@@ -41,15 +42,14 @@ export default function Home() {
     const { data: master } = await supabase
       .from('draw_master')
       .select('*')
-      .neq('booth_name', 'トンボ玉')
+      .eq('booth_name', TARGET_BOOTH)
       .order('event_date', { ascending: true })
-      .order('booth_name', { ascending: true })
       .order('time_slot', { ascending: true });
 
     const { data: entries } = await supabase
       .from('draw_entries')
       .select('event_date, booth_name, time_slot, num_people, status')
-      .neq('booth_name', 'トンボ玉')
+      .eq('booth_name', TARGET_BOOTH)
       .neq('status', 'キャンセル');
 
     if (master) setMasterData(master as MasterSlot[]);
@@ -83,7 +83,6 @@ export default function Home() {
   const getSlotRemaining = (slot: MasterSlot) => {
     const matchedEntries = allEntries.filter(e => 
       e.event_date === slot.event_date &&
-      e.booth_name === slot.booth_name &&
       e.time_slot === slot.time_slot
     );
     const used = matchedEntries.reduce((sum, item) => sum + item.num_people, 0);
@@ -92,22 +91,19 @@ export default function Home() {
 
   const validMasterData = masterData.filter(d => !isPastSlot(d.event_date, d.time_slot));
   const dateOptions = Array.from(new Set(validMasterData.map(d => d.event_date)));
-  const boothOptions = Array.from(new Set(validMasterData.filter(d => d.event_date === selectedDate).map(d => d.booth_name)));
   const slotOptions = validMasterData
-    .filter(d => d.event_date === selectedDate && d.booth_name === selectedBooth)
+    .filter(d => d.event_date === selectedDate)
     .sort((a, b) => a.time_slot.localeCompare(b.time_slot, undefined, { numeric: true }));
 
   const remainingSeats = selectedSlot ? getSlotRemaining(selectedSlot) : 0;
   const isSlotBeforeStart = selectedSlot ? isBeforeStart(selectedSlot.booking_start_at) : false;
 
-  // 確認画面を開く前の最終バリデーション
   const handleOpenConfirm = () => {
     if (!userName.trim() || !selectedSlot) return;
     setErrorMessage('');
     setShowConfirmModal(true);
   };
 
-  // 実際の送信処理（確認モーダルで「確定する」を押した時）
   const handleRegister = async () => {
     if (!userName.trim() || !selectedSlot) return;
     
@@ -135,7 +131,7 @@ export default function Home() {
       .from('draw_entries')
       .select('num_people')
       .eq('event_date', selectedSlot.event_date)
-      .eq('booth_name', selectedSlot.booth_name)
+      .eq('booth_name', TARGET_BOOTH)
       .eq('time_slot', selectedSlot.time_slot)
       .neq('status', 'キャンセル');
 
@@ -156,7 +152,7 @@ export default function Home() {
         {
           user_name: userName.trim(),
           event_date: selectedSlot.event_date,
-          booth_name: selectedSlot.booth_name,
+          booth_name: TARGET_BOOTH,
           time_slot: selectedSlot.time_slot,
           num_people: numPeople,
           status: '予約確定'
@@ -181,14 +177,14 @@ export default function Home() {
     return (
       <div className="flex justify-center items-center p-4 min-h-screen bg-gray-100">
         <div className="p-6 w-full max-w-md bg-white rounded-xl shadow-lg text-center">
-          <h2 className="text-2xl font-bold text-green-600 mb-2">先着予約完了</h2>
+          <h2 className="text-2xl font-bold text-green-600 mb-2">【トンボ玉】予約完了</h2>
           <p className="text-sm text-gray-600 mb-6">ご予約が確定いたしました。当日会場でお待ちしております。</p>
           
           <div className="p-4 bg-gray-50 rounded-lg border-2 border-dashed border-blue-500 text-left space-y-2">
             <div className="text-center font-bold text-blue-600 border-b pb-2 mb-2">◆ 予約内容の控え ◆</div>
             <div className="flex justify-between"><span className="text-gray-500 font-bold">お呼び出し名:</span><span className="font-bold">{userName} 様</span></div>
+            <div className="flex justify-between"><span className="text-gray-500 font-bold">対象ブース:</span><span className="font-bold">{TARGET_BOOTH}</span></div>
             <div className="flex justify-between"><span className="text-gray-500 font-bold">希望日:</span><span className="font-bold">{selectedSlot.event_date}</span></div>
-            <div className="flex justify-between"><span className="text-gray-500 font-bold">希望ブース:</span><span className="font-bold">{selectedSlot.booth_name}</span></div>
             <div className="flex justify-between"><span className="text-gray-500 font-bold">時間帯:</span><span className="font-bold">{selectedSlot.time_slot}</span></div>
             <div className="flex justify-between"><span className="text-gray-500 font-bold">予約人数:</span><span className="font-bold">{numPeople} 名</span></div>
             <p className="text-xs text-red-500 font-bold text-center pt-4">※この画面のスクリーンショットを撮影して大切に保管してください。</p>
@@ -201,7 +197,8 @@ export default function Home() {
   return (
     <div className="p-4 min-h-screen bg-gray-100 flex items-center justify-center">
       <div className="w-full max-w-md bg-white p-6 rounded-xl shadow-md">
-        <h1 className="text-xl font-bold text-center text-blue-600 mb-6">一般ブース先着予約フォーム</h1>
+        <h1 className="text-xl font-bold text-center text-blue-600 mb-1">【トンボ玉】専用予約フォーム</h1>
+        <p className="text-xs text-center text-gray-500 mb-6">※こちらは「トンボ玉体験」専用の予約ページです</p>
 
         {/* 注意事項 */}
         <div className="mb-4 bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-lg text-sm space-y-1">
@@ -238,7 +235,7 @@ export default function Home() {
               <label className="block text-xs font-bold text-gray-600 mb-1">1. 希望日を選択</label>
               <select 
                 value={selectedDate} 
-                onChange={(e) => { setSelectedDate(e.target.value); setSelectedBooth(''); setSelectedSlot(null); }}
+                onChange={(e) => { setSelectedDate(e.target.value); setSelectedSlot(null); }}
                 className="w-full p-2 border rounded-lg text-base bg-white"
               >
                 <option value="">-- 日付を選択してください --</option>
@@ -247,23 +244,10 @@ export default function Home() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-gray-600 mb-1">2. 希望ブースを選択</label>
-              <select 
-                value={selectedBooth} 
-                disabled={!selectedDate}
-                onChange={(e) => { setSelectedBooth(e.target.value); setSelectedSlot(null); }}
-                className="w-full p-2 border rounded-lg text-base bg-white disabled:bg-gray-100"
-              >
-                <option value="">-- 先に日付を選択してください --</option>
-                {boothOptions.map(b => <option key={b} value={b}>{b}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-gray-600 mb-1">3. 希望時間帯を選択</label>
+              <label className="block text-xs font-bold text-gray-600 mb-1">2. 希望時間帯を選択</label>
               <select 
                 value={selectedSlot?.id || ''} 
-                disabled={!selectedBooth}
+                disabled={!selectedDate}
                 onChange={(e) => {
                   const slot = slotOptions.find(s => s.id === Number(e.target.value));
                   setSelectedSlot(slot || null);
@@ -271,7 +255,7 @@ export default function Home() {
                 }}
                 className="w-full p-2 border rounded-lg text-base bg-white disabled:bg-gray-100"
               >
-                <option value="">-- 先にブースを選択してください --</option>
+                <option value="">-- 先に日付を選択してください --</option>
                 {slotOptions.map(s => {
                   const beforeStart = isBeforeStart(s.booking_start_at);
                   const rem = getSlotRemaining(s);
@@ -312,7 +296,7 @@ export default function Home() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-gray-600 mb-1">4. 希望人数（体験者数）</label>
+              <label className="block text-xs font-bold text-gray-600 mb-1">3. 希望人数（体験者数）</label>
               <select
                 value={numPeople}
                 disabled={!selectedSlot || remainingSeats <= 0 || isSlotBeforeStart}
@@ -373,12 +357,12 @@ export default function Home() {
                 <span className="font-bold text-gray-800">{userName} 様</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">希望日:</span>
-                <span className="font-bold text-gray-800">{selectedSlot.event_date}</span>
+                <span className="text-gray-500">対象ブース:</span>
+                <span className="font-bold text-blue-600">{TARGET_BOOTH}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">ブース名:</span>
-                <span className="font-bold text-blue-600">{selectedSlot.booth_name}</span>
+                <span className="text-gray-500">希望日:</span>
+                <span className="font-bold text-gray-800">{selectedSlot.event_date}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">時間帯:</span>
