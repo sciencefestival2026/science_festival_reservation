@@ -17,170 +17,268 @@ export default function StaffViewPage() {
   const [allEntries, setAllEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
-  const [selectedDate, setSelectedDate] = useState<string>('');
-  const [selectedBooth, setSelectedBooth] = useState<string>('');
-  const [selectedTime, setSelectedTime] = useState<string>('');
+  // --- フォーム入力用ステート（一時保持） ---
+  const [inputDate, setInputDate] = useState<string>('');
+  const [inputBooth, setInputBooth] = useState<string>('');
+  const [inputTime, setInputTime] = useState<string>('');
+  const [inputName, setInputName] = useState<string>(''); // ★ お名前入力用
+
+  // --- 実際に絞り込みに適用する検索条件ステート ---
+  const [searchParams, setSearchParams] = useState({
+    date: '',
+    booth: '',
+    time: '',
+    name: '', // ★ お名前検索条件
+  });
+
+  // データ取得
+  const fetchData = async () => {
+    setLoading(true);
+    // 「予約確定」または「当選」データのみ取得
+    const { data, error } = await supabase
+      .from('draw_entries')
+      .select('*')
+      .in('status', ['予約確定', '当選']);
+
+    if (error) {
+      console.error('名簿取得エラー:', error);
+    } else if (data) {
+      const sorted = (data as Entry[]).sort((a, b) => {
+        if (a.event_date !== b.event_date) return a.event_date.localeCompare(b.event_date);
+        if (a.booth_name !== b.booth_name) return a.booth_name.localeCompare(b.booth_name, undefined, { numeric: true });
+        return a.time_slot.localeCompare(b.time_slot, undefined, { numeric: true });
+      });
+      setAllEntries(sorted);
+    }
+    setLoading(false);
+  };
 
   useEffect(() => {
-    async function loadLogData() {
-      // 「予約確定」または過去の「当選」データのみを取得
-      const { data, error } = await supabase
-        .from('draw_entries')
-        .select('*')
-        .in('status', ['予約確定', '当選']);
-
-      if (error) {
-        console.error('名簿取得エラー:', error);
-      } else if (data) {
-        const sorted = (data as Entry[]).sort((a, b) => {
-          if (a.event_date !== b.event_date) return a.event_date.localeCompare(b.event_date);
-          if (a.booth_name !== b.booth_name) return a.booth_name.localeCompare(b.booth_name);
-          return a.time_slot.localeCompare(b.time_slot);
-        });
-        setAllEntries(sorted);
-      }
-      setLoading(false);
-    }
-    loadLogData();
+    fetchData();
   }, []);
 
+  // 初期読み込み時の localStorage 復元
   useEffect(() => {
     if (!loading && allEntries.length > 0) {
       const savedDate = localStorage.getItem('staff_fDate') || '';
       const savedBooth = localStorage.getItem('staff_fBooth') || '';
       const savedTime = localStorage.getItem('staff_fTime') || '';
 
-      if (savedDate) setSelectedDate(savedDate);
-      if (savedBooth) setSelectedBooth(savedBooth);
-      if (savedTime) setSelectedTime(savedTime);
+      setInputDate(savedDate);
+      setInputBooth(savedBooth);
+      setInputTime(savedTime);
+      setSearchParams({ date: savedDate, booth: savedBooth, time: savedTime, name: '' });
     }
-  }, [loading, allEntries]);
+  }, [loading]);
 
+  // --- フィルター用動的オプション ---
   const dateOptions = Array.from(new Set(allEntries.map(item => item.event_date))).sort();
 
   const boothOptions = Array.from(
-    new Set(allEntries.filter(item => !selectedDate || item.event_date === selectedDate).map(item => item.booth_name))
-  ).sort();
+    new Set(allEntries.filter(item => !inputDate || item.event_date === inputDate).map(item => item.booth_name))
+  ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
   const timeOptions = Array.from(
     new Set(
       allEntries
-        .filter(item => (!selectedDate || item.event_date === selectedDate) && (!selectedBooth || item.booth_name === selectedBooth))
+        .filter(item => (!inputDate || item.event_date === inputDate) && (!inputBooth || item.booth_name === inputBooth))
         .map(item => item.time_slot)
     )
-  ).sort();
+  ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
-  const handleDateChange = (val: string) => {
-    setSelectedDate(val);
-    setSelectedBooth('');
-    setSelectedTime('');
-    localStorage.setItem('staff_fDate', val);
+  // ★ 検索実行
+  const handleSearch = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setSearchParams({
+      date: inputDate,
+      booth: inputBooth,
+      time: inputTime,
+      name: inputName,
+    });
+    localStorage.setItem('staff_fDate', inputDate);
+    localStorage.setItem('staff_fBooth', inputBooth);
+    localStorage.setItem('staff_fTime', inputTime);
+  };
+
+  // ★ 条件リセット
+  const handleClear = () => {
+    setInputDate('');
+    setInputBooth('');
+    setInputTime('');
+    setInputName('');
+    setSearchParams({ date: '', booth: '', time: '', name: '' });
+    localStorage.removeItem('staff_fDate');
     localStorage.removeItem('staff_fBooth');
     localStorage.removeItem('staff_fTime');
   };
 
-  const handleBoothChange = (val: string) => {
-    setSelectedBooth(val);
-    setSelectedTime('');
-    localStorage.setItem('staff_fBooth', val);
-    localStorage.removeItem('staff_fTime');
-  };
-
-  const handleTimeChange = (val: string) => {
-    setSelectedTime(val);
-    localStorage.setItem('staff_fTime', val);
-  };
-
+  // 絞り込み実行
   const displayedEntries = allEntries.filter(item => {
-    return (!selectedDate || item.event_date === selectedDate) &&
-           (!selectedBooth || item.booth_name === selectedBooth) &&
-           (!selectedTime || item.time_slot === selectedTime);
+    const matchDate = searchParams.date ? item.event_date === searchParams.date : true;
+    const matchBooth = searchParams.booth ? item.booth_name === searchParams.booth : true;
+    const matchTime = searchParams.time ? item.time_slot === searchParams.time : true;
+    const matchName = searchParams.name
+      ? (item.user_name || '').toLowerCase().includes(searchParams.name.trim().toLowerCase())
+      : true;
+
+    return matchDate && matchBooth && matchTime && matchName;
   });
 
   const totalPeople = displayedEntries.reduce((sum, item) => sum + item.num_people, 0);
 
-  if (loading) return <div className="p-6 text-center text-gray-500 font-bold">最新の名簿データを読み込み中...</div>;
-
   return (
-    <div className="min-h-screen bg-gray-100">
-      <div className="bg-gray-800 text-white p-4 text-center shadow-md">
-        <h1 className="text-lg font-bold">【運営スタッフ専用】当日受付・予約者名簿</h1>
+    <div className="max-w-6xl mx-auto p-6 space-y-6">
+      {/* 画面ヘッダー */}
+      <div className="flex justify-between items-center border-b pb-4">
+        <div>
+          <h1 className="text-2xl font-bold">当日受付・予約者名簿</h1>
+          <p className="text-xs text-gray-500 mt-1">運営スタッフ専用コンソール</p>
+        </div>
+        <button
+          onClick={fetchData}
+          className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-sm rounded transition font-medium"
+        >
+          🔄 最新名簿に更新
+        </button>
       </div>
 
-      <div className="p-4 max-w-2xl mx-auto space-y-4">
-        <div className="bg-gray-200 p-4 rounded-xl shadow-inner grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div>
-            <label className="block text-xs font-bold text-gray-600 mb-1">1. 開催日</label>
-            <select
-              value={selectedDate}
-              onChange={(e) => handleDateChange(e.target.value)}
-              className="w-full p-2 border rounded-lg text-sm bg-white"
+      {loading ? (
+        <p className="text-gray-500 text-center py-8">最新の名簿データを読み込み中...</p>
+      ) : (
+        <div className="space-y-4">
+          {/* 検索・絞り込みフィルター */}
+          <form onSubmit={handleSearch} className="bg-gray-50 p-4 rounded-lg border flex flex-wrap gap-3 items-center">
+            <span className="text-xs font-bold text-gray-700">🔍 名簿の絞り込み:</span>
+
+            {/* 1. 開催日 */}
+            <div>
+              <select
+                value={inputDate}
+                onChange={(e) => {
+                  setInputDate(e.target.value);
+                  setInputBooth('');
+                  setInputTime('');
+                }}
+                className="p-2 border rounded text-xs bg-white font-medium focus:outline-blue-500"
+              >
+                <option value="">すべての開催日</option>
+                {dateOptions.map(d => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* 2. ブース名 */}
+            <div>
+              <select
+                value={inputBooth}
+                onChange={(e) => {
+                  setInputBooth(e.target.value);
+                  setInputTime('');
+                }}
+                className="p-2 border rounded text-xs bg-white font-medium focus:outline-blue-500"
+              >
+                <option value="">すべてのブース</option>
+                {boothOptions.map(b => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* 3. 時間帯 */}
+            <div>
+              <select
+                value={inputTime}
+                onChange={(e) => setInputTime(e.target.value)}
+                className="p-2 border rounded text-xs bg-white font-medium focus:outline-blue-500"
+              >
+                <option value="">すべての時間帯</option>
+                {timeOptions.map(t => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* ★ 4. お名前検索インプット */}
+            <div>
+              <input
+                type="text"
+                placeholder="お名前（呼び出し名）..."
+                value={inputName}
+                onChange={(e) => setInputName(e.target.value)}
+                className="p-2 border rounded text-xs bg-white font-medium w-40 md:w-48 focus:outline-blue-500"
+              />
+            </div>
+
+            {/* 検索実行ボタン */}
+            <button
+              type="submit"
+              className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded transition shadow-sm"
             >
-              <option value="">すべて</option>
-              {dateOptions.map(d => <option key={d} value={d}>{d}</option>)}
-            </select>
+              検索
+            </button>
+
+            {/* クリアボタン */}
+            {(searchParams.date || searchParams.booth || searchParams.time || searchParams.name || inputDate || inputBooth || inputTime || inputName) && (
+              <button
+                type="button"
+                onClick={handleClear}
+                className="text-xs text-gray-500 hover:text-gray-700 font-bold underline"
+              >
+                条件をリセット
+              </button>
+            )}
+          </form>
+
+          {/* 集計ステータス表示 */}
+          <div className="flex justify-between items-center px-1">
+            <span className="text-xs text-gray-500 font-medium">
+              表示中のデータ: {displayedEntries.length} 件
+            </span>
+            <div className="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-md border border-blue-100">
+              該当: <span className="text-base">{displayedEntries.length}</span> 組 / 合計人数: <span className="text-base">{totalPeople}</span> 名
+            </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-gray-600 mb-1">2. ブース名</label>
-            <select
-              value={selectedBooth}
-              disabled={!selectedDate}
-              onChange={(e) => handleBoothChange(e.target.value)}
-              className="w-full p-2 border rounded-lg text-sm bg-white disabled:bg-gray-100"
-            >
-              <option value="">すべて</option>
-              {boothOptions.map(b => <option key={b} value={b}>{b}</option>)}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-gray-600 mb-1">3. 時間帯</label>
-            <select
-              value={selectedTime}
-              disabled={!selectedBooth}
-              onChange={(e) => handleTimeChange(e.target.value)}
-              className="w-full p-2 border rounded-lg text-sm bg-white disabled:bg-gray-100"
-            >
-              <option value="">すべて</option>
-              {timeOptions.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
-        </div>
-
-        <div className="text-right text-sm font-bold text-blue-600 pr-1">
-          該当: {displayedEntries.length} 組 / 合計人数: {totalPeople} 名
-        </div>
-
-        <div className="bg-white rounded-xl shadow border overflow-hidden">
-          <table className="w-full text-left border-collapse text-sm">
-            <thead>
-              <tr className="bg-gray-100 border-b text-gray-600">
-                <th className="p-3 font-bold">お呼び出し名</th>
-                <th className="p-3 font-bold hidden sm:table-cell">開催日</th>
-                <th className="p-3 font-bold hidden sm:table-cell">ブース</th>
-                <th className="p-3 font-bold">時間枠</th>
-                <th className="p-3 font-bold w-20 text-center">人数</th>
-              </tr>
-            </thead>
-            <tbody>
-              {displayedEntries.length === 0 ? (
-                <tr><td colSpan={5} className="p-8 text-center text-gray-400 italic">該当する予約データはありません。</td></tr>
-              ) : (
-                displayedEntries.map(item => (
-                  <tr key={item.id} className="border-b hover:bg-gray-50 transition">
-                    <td className="p-3 font-bold text-gray-800">{item.user_name}</td>
-                    <td className="p-3 text-gray-500 text-xs hidden sm:table-cell">{item.event_date}</td>
-                    <td className="p-3 text-gray-500 text-xs hidden sm:table-cell">{item.booth_name}</td>
-                    <td className="p-3 text-gray-700 font-medium">{item.time_slot}</td>
-                    <td className="p-3 font-bold text-blue-600 text-center">{item.num_people}名</td>
+          {/* データ一覧テーブル */}
+          <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  <th className="p-3">お呼び出し名</th>
+                  <th className="p-3">開催日</th>
+                  <th className="p-3">ブース</th>
+                  <th className="p-3">時間帯</th>
+                  <th className="p-3 text-center">人数</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {displayedEntries.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="p-8 text-center text-gray-500">
+                      該当する予約データはありません
+                    </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  displayedEntries.map((item) => (
+                    <tr key={item.id} className="hover:bg-gray-50 transition">
+                      <td className="p-3 font-semibold text-gray-900">{item.user_name}</td>
+                      <td className="p-3 text-gray-600">{item.event_date}</td>
+                      <td className="p-3 text-gray-600 font-medium">{item.booth_name}</td>
+                      <td className="p-3 text-gray-600">{item.time_slot}</td>
+                      <td className="p-3 text-center">
+                        <span className="px-2 py-1 bg-blue-50 text-blue-700 font-bold rounded text-xs border border-blue-100">
+                          {item.num_people}名
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

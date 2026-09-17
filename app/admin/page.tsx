@@ -33,11 +33,19 @@ export default function AdminPage() {
   // 枠追加フォームの折りたたみステート
   const [showAddForm, setShowAddForm] = useState<boolean>(false);
 
-  // フィルター用ステート
-  const [filterDate, setFilterDate] = useState<string>('');
-  const [filterBooth, setFilterBooth] = useState<string>('');
+  // --- フォーム入力用ステート（一時保持） ---
+  const [inputDate, setInputDate] = useState<string>('');
+  const [inputBooth, setInputBooth] = useState<string>('');
+  const [inputName, setInputName] = useState<string>('');
 
-  // フォーム用ステート
+  // --- 実際に絞り込みに適用する検索条件ステート ---
+  const [searchParams, setSearchParams] = useState({
+    date: '',
+    booth: '',
+    name: '',
+  });
+
+  // マスター新規登録フォーム用ステート
   const [newEventDate, setNewEventDate] = useState('');
   const [newBoothName, setNewBoothName] = useState('');
   const [newTimeSlot, setNewTimeSlot] = useState('');
@@ -110,8 +118,7 @@ export default function AdminPage() {
       alert(`【登録失敗】\nエラー内容: ${error.message}`);
     } else {
       alert('マスター枠を追加しました！');
-      // 開催日(newEventDate)、ブース名(newBoothName)、定員(newCapacity)、予約開始日時(newBookingStartAt) はそのまま保持
-      setNewTimeSlot(''); // 時間帯のみクリアして次の枠入力をスムーズにする
+      setNewTimeSlot('');
       fetchData();
     }
   };
@@ -159,28 +166,52 @@ export default function AdminPage() {
     new Set([...masters.map(m => m.booth_name), ...entries.map(e => e.booth_name)])
   ).filter(Boolean).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
-  // --- 絞り込み処理 ---
+  // ★検索ボタン押下時の処理
+  const handleSearch = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setSearchParams({
+      date: inputDate,
+      booth: inputBooth,
+      name: inputName,
+    });
+  };
+
+  // ★クリアボタン押下時の処理
+  const handleClear = () => {
+    setInputDate('');
+    setInputBooth('');
+    setInputName('');
+    setSearchParams({ date: '', booth: '', name: '' });
+  };
+
+  // --- 絞り込み処理（確定された searchParams をもとに実行） ---
   const filteredEntries = entries.filter(item => {
-    const matchDate = filterDate ? item.event_date === filterDate : true;
-    const matchBooth = filterBooth ? item.booth_name === filterBooth : true;
-    return matchDate && matchBooth;
+    const matchDate = searchParams.date ? item.event_date === searchParams.date : true;
+    const matchBooth = searchParams.booth ? item.booth_name === searchParams.booth : true;
+    const matchName = searchParams.name 
+      ? (item.user_name || '').toLowerCase().includes(searchParams.name.trim().toLowerCase()) 
+      : true;
+
+    return matchDate && matchBooth && matchName;
   });
 
   const filteredMasters = masters.filter(item => {
-    const matchDate = filterDate ? item.event_date === filterDate : true;
-    const matchBooth = filterBooth ? item.booth_name === filterBooth : true;
+    const matchDate = searchParams.date ? item.event_date === searchParams.date : true;
+    const matchBooth = searchParams.booth ? item.booth_name === searchParams.booth : true;
     return matchDate && matchBooth;
   });
 
   // 共通フィルターコンポーネント
   const FilterUI = () => (
-    <div className="bg-gray-50 p-4 rounded-lg border flex flex-wrap gap-4 items-center">
+    <form onSubmit={handleSearch} className="bg-gray-50 p-4 rounded-lg border flex flex-wrap gap-3 items-center">
       <span className="text-xs font-bold text-gray-700">🔍 一覧の絞り込み:</span>
+      
+      {/* 1. 開催日 */}
       <div>
         <select
-          value={filterDate}
-          onChange={(e) => setFilterDate(e.target.value)}
-          className="p-2 border rounded text-xs bg-white font-medium"
+          value={inputDate}
+          onChange={(e) => setInputDate(e.target.value)}
+          className="p-2 border rounded text-xs bg-white font-medium focus:outline-blue-500"
         >
           <option value="">すべての開催日</option>
           {availableDates.map(d => (
@@ -188,11 +219,13 @@ export default function AdminPage() {
           ))}
         </select>
       </div>
+
+      {/* 2. ブース名 */}
       <div>
         <select
-          value={filterBooth}
-          onChange={(e) => setFilterBooth(e.target.value)}
-          className="p-2 border rounded text-xs bg-white font-medium"
+          value={inputBooth}
+          onChange={(e) => setInputBooth(e.target.value)}
+          className="p-2 border rounded text-xs bg-white font-medium focus:outline-blue-500"
         >
           <option value="">すべてのブース</option>
           {availableBooths.map(b => (
@@ -200,15 +233,39 @@ export default function AdminPage() {
           ))}
         </select>
       </div>
-      {(filterDate || filterBooth) && (
+
+      {/* 3. お名前（予約一覧タブでのみ表示） */}
+      {activeTab === 'entries' && (
+        <div>
+          <input
+            type="text"
+            placeholder="お名前を入力..."
+            value={inputName}
+            onChange={(e) => setInputName(e.target.value)}
+            className="p-2 border rounded text-xs bg-white font-medium w-40 md:w-48 focus:outline-blue-500"
+          />
+        </div>
+      )}
+
+      {/* 🔍 検索実行ボタン */}
+      <button
+        type="submit"
+        className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded transition shadow-sm"
+      >
+        検索
+      </button>
+
+      {/* クリアボタン */}
+      {(searchParams.date || searchParams.booth || searchParams.name || inputDate || inputBooth || inputName) && (
         <button
-          onClick={() => { setFilterDate(''); setFilterBooth(''); }}
-          className="text-xs text-blue-600 font-bold hover:underline"
+          type="button"
+          onClick={handleClear}
+          className="text-xs text-gray-500 hover:text-gray-700 font-bold underline"
         >
-          条件をクリア
+          条件をリセット
         </button>
       )}
-    </div>
+    </form>
   );
 
   return (
@@ -421,7 +478,7 @@ export default function AdminPage() {
                       filteredMasters.map((slot) => {
                         const cap = slot.capacity ?? 0;
                         const reserved = getReservedCount(slot.event_date, slot.booth_name, slot.time_slot);
-                        const isOverCapacity = reserved > cap; // 人数超過フラグ
+                        const isOverCapacity = reserved > cap;
 
                         return (
                           <tr key={slot.id} className={isOverCapacity ? 'bg-red-50' : 'hover:bg-gray-50'}>
@@ -453,7 +510,6 @@ export default function AdminPage() {
                                   {reserved} / {cap} 名
                                 </span>
                                 
-                                {/* 人数超過エラー表示 */}
                                 {isOverCapacity && (
                                   <span className="px-2 py-0.5 bg-red-600 text-white text-xs font-bold rounded-full animate-pulse">
                                     人数超過エラー
