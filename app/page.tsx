@@ -41,7 +41,7 @@ export default function Home() {
     const { data: master } = await supabase
       .from('draw_master')
       .select('*')
-      .neq('booth_name', 'トンボ玉')
+      .neq('booth_name', 'とんぼ玉を作ろう！')
       .order('event_date', { ascending: true })
       .order('booth_name', { ascending: true })
       .order('time_slot', { ascending: true });
@@ -49,7 +49,7 @@ export default function Home() {
     const { data: entries } = await supabase
       .from('draw_entries')
       .select('event_date, booth_name, time_slot, num_people, status')
-      .neq('booth_name', 'トンボ玉')
+      .neq('booth_name', 'とんぼ玉を作ろう！')
       .neq('status', 'キャンセル');
 
     if (master) setMasterData(master as MasterSlot[]);
