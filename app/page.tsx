@@ -58,7 +58,10 @@ export default function Home() {
   };
 
   useEffect(() => {
-    loadInitialData();
+    loadInitialData().then(() => {
+      // データの読み込み完了後、希望日を「2026-09-20」にデフォルト設定
+      setSelectedDate('2026-09-20');
+    });
   }, []);
 
   const isPastSlot = (eventDate: string, timeSlot: string) => {

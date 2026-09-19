@@ -24,3 +24,53 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ==========================================
+   端末依存の入力欄文字薄れ・透明化対策 (Hotfix)
+   ========================================== */
+
+/* 通常の入力欄・ドロップダウンの文字色をくっきり固定 */
+input[type="text"],
+input[type="number"],
+input[type="email"],
+select,
+textarea {
+  color: #111827 !important; /* 濃いグレー（ほぼ黒） */
+  -webkit-text-fill-color: #111827 !important; /* Safari/iOS専用の文字色固定 */
+  opacity: 1 !important; /* iOS特有の自動透明化（半透明）を解除 */
+  background-color: #ffffff; /* 背景色を白に固定 */
+}
+
+/* プレースホルダー（入力ヒント文字）の濃さを調整 */
+input::placeholder,
+textarea::placeholder {
+  color: #9ca3af !important;
+  -webkit-text-fill-color: #9ca3af !important;
+  opacity: 1 !important;
+}
+
+/* 選択不可（disabled）な入力欄・ドロップダウン（満席や受付前など） */
+input:disabled,
+select:disabled {
+  color: #6b7280 !important; /* 読めるレベルのグレー */
+  -webkit-text-fill-color: #6b7280 !important;
+  opacity: 1 !important; /* iOSで文字が消えかけるのを防ぐ */
+  background-color: #f3f4f6 !important; /* 背景を明らかな薄グレーに */
+}
+
+/* スマホのダークモード設定による自動反転を強制ブロック */
+@media (prefers-color-scheme: dark) {
+  input[type="text"],
+  select,
+  textarea {
+    color: #111827 !important;
+    -webkit-text-fill-color: #111827 !important;
+    background-color: #ffffff !important;
+  }
+  
+  /* モーダルやカード背景も白に保持 */
+  .bg-white {
+    background-color: #ffffff !important;
+    color: #111827 !important;
+  }
+}

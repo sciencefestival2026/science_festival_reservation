@@ -33,7 +33,7 @@ export default function TonbodamaBooking() {
   const [selectedSlot, setSelectedSlot] = useState<MasterSlot | null>(null);
   const [numPeople, setNumPeople] = useState<number>(1);
   
-  const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false); // 確認画面表示フラグ
+  const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
   const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
@@ -57,8 +57,11 @@ export default function TonbodamaBooking() {
     setLoading(false);
   };
 
+  // 初期読み込み後に明日（2026-09-20）をデフォルト設定
   useEffect(() => {
-    loadInitialData();
+    loadInitialData().then(() => {
+      setSelectedDate('2026-09-20');
+    });
   }, []);
 
   const isPastSlot = (eventDate: string, timeSlot: string) => {
@@ -85,7 +88,7 @@ export default function TonbodamaBooking() {
       e.event_date === slot.event_date &&
       e.time_slot === slot.time_slot
     );
-    const used = matchedEntries.reduce((sum, item) => sum + item.num_people, 0);
+    const used = matchedEntries.reduce((sum, item) => sum + (item.num_people || 1), 0);
     return slot.capacity - used;
   };
 
@@ -98,12 +101,33 @@ export default function TonbodamaBooking() {
   const remainingSeats = selectedSlot ? getSlotRemaining(selectedSlot) : 0;
   const isSlotBeforeStart = selectedSlot ? isBeforeStart(selectedSlot.booking_start_at) : false;
 
-  const handleOpenConfirm = () => {
+  // 1次チェック：確認モーダルを開く直前にリアルタイムで最新残数をチェック
+  const handleOpenConfirm = async () => {
     if (!userName.trim() || !selectedSlot) return;
     setErrorMessage('');
+
+    // 最新データの問い合わせ
+    const { data: latestEntries } = await supabase
+      .from('draw_entries')
+      .select('num_people')
+      .eq('event_date', selectedSlot.event_date)
+      .eq('booth_name', TARGET_BOOTH)
+      .eq('time_slot', selectedSlot.time_slot)
+      .neq('status', 'キャンセル');
+
+    const latestTotal = (latestEntries || []).reduce((sum, item) => sum + (item.num_people || 1), 0);
+    const latestRemaining = selectedSlot.capacity - latestTotal;
+
+    if (numPeople > latestRemaining) {
+      setErrorMessage(`申し訳ありません。最新の残数が不足しているため確認画面に進めません。（残り枠: ${Math.max(0, latestRemaining)}名）`);
+      await loadInitialData();
+      return;
+    }
+
     setShowConfirmModal(true);
   };
 
+  // 2次チェック：実際の送信処理（確認モーダルで「確定する」を押した直後に再確認してINSERT）
   const handleRegister = async () => {
     if (!userName.trim() || !selectedSlot) return;
     
@@ -127,7 +151,8 @@ export default function TonbodamaBooking() {
       return;
     }
 
-    const { data: latestEntries } = await supabase
+    // DBからの最新残数取得
+    const { data: latestEntries, error: fetchErr } = await supabase
       .from('draw_entries')
       .select('num_people')
       .eq('event_date', selectedSlot.event_date)
@@ -135,18 +160,26 @@ export default function TonbodamaBooking() {
       .eq('time_slot', selectedSlot.time_slot)
       .neq('status', 'キャンセル');
 
-    const latestTotal = (latestEntries || []).reduce((sum, item) => sum + item.num_people, 0);
+    if (fetchErr) {
+      setErrorMessage('通信エラーが発生しました。もう一度お試しください。');
+      setIsSubmitting(false);
+      return;
+    }
+
+    const latestTotal = (latestEntries || []).reduce((sum, item) => sum + (item.num_people || 1), 0);
     const latestRemaining = selectedSlot.capacity - latestTotal;
 
+    // 最新枠オーバーの判定
     if (numPeople > latestRemaining) {
-      setErrorMessage(`申し訳ありません。タッチの差で定員に達したため予約できませんでした。（残り枠: ${Math.max(0, latestRemaining)}名）`);
+      setErrorMessage(`申し訳ありません。直前に定員に達したため予約できませんでした。（残り枠: ${Math.max(0, latestRemaining)}名）`);
       setIsSubmitting(false);
       setShowConfirmModal(false);
       await loadInitialData();
       return;
     }
 
-    const { error } = await supabase
+    // 書き込み処理
+    const { error: insertErr } = await supabase
       .from('draw_entries')
       .insert([
         {
@@ -159,7 +192,7 @@ export default function TonbodamaBooking() {
         }
       ]);
 
-    if (error) {
+    if (insertErr) {
       setErrorMessage('通信エラーが発生しました。時間をおいて再度お試しください。');
       setIsSubmitting(false);
       setShowConfirmModal(false);
