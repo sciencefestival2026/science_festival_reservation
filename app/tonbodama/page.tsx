@@ -57,7 +57,6 @@ export default function TonbodamaBooking() {
     setLoading(false);
   };
 
-  // 初期読み込み後に明日（2026-09-20）をデフォルト設定
   useEffect(() => {
     loadInitialData().then(() => {
       setSelectedDate('2026-09-20');
@@ -101,12 +100,10 @@ export default function TonbodamaBooking() {
   const remainingSeats = selectedSlot ? getSlotRemaining(selectedSlot) : 0;
   const isSlotBeforeStart = selectedSlot ? isBeforeStart(selectedSlot.booking_start_at) : false;
 
-  // 1次チェック：確認モーダルを開く直前にリアルタイムで最新残数をチェック
   const handleOpenConfirm = async () => {
     if (!userName.trim() || !selectedSlot) return;
     setErrorMessage('');
 
-    // 最新データの問い合わせ
     const { data: latestEntries } = await supabase
       .from('draw_entries')
       .select('num_people')
@@ -127,7 +124,6 @@ export default function TonbodamaBooking() {
     setShowConfirmModal(true);
   };
 
-  // 2次チェック：実際の送信処理（確認モーダルで「確定する」を押した直後に再確認してINSERT）
   const handleRegister = async () => {
     if (!userName.trim() || !selectedSlot) return;
     
@@ -151,7 +147,6 @@ export default function TonbodamaBooking() {
       return;
     }
 
-    // DBからの最新残数取得
     const { data: latestEntries, error: fetchErr } = await supabase
       .from('draw_entries')
       .select('num_people')
@@ -169,7 +164,6 @@ export default function TonbodamaBooking() {
     const latestTotal = (latestEntries || []).reduce((sum, item) => sum + (item.num_people || 1), 0);
     const latestRemaining = selectedSlot.capacity - latestTotal;
 
-    // 最新枠オーバーの判定
     if (numPeople > latestRemaining) {
       setErrorMessage(`申し訳ありません。直前に定員に達したため予約できませんでした。（残り枠: ${Math.max(0, latestRemaining)}名）`);
       setIsSubmitting(false);
@@ -178,7 +172,6 @@ export default function TonbodamaBooking() {
       return;
     }
 
-    // 書き込み処理
     const { error: insertErr } = await supabase
       .from('draw_entries')
       .insert([
@@ -206,12 +199,13 @@ export default function TonbodamaBooking() {
     return <div className="flex justify-center items-center h-screen font-bold text-gray-500">データを読み込み中...</div>;
   }
 
+  // 完了画面
   if (isSubmitted && selectedSlot) {
     return (
       <div className="flex justify-center items-center p-4 min-h-screen bg-gray-100">
         <div className="p-6 w-full max-w-md bg-white rounded-xl shadow-lg text-center">
           <h2 className="text-2xl font-bold text-green-600 mb-2">【トンボ玉】予約完了</h2>
-          <p className="text-sm text-gray-600 mb-6">ご予約が確定いたしました。当日会場でお待ちしております。</p>
+          <p className="text-sm text-gray-600 mb-4">ご予約が確定いたしました。当日会場でお待ちしております。</p>
           
           <div className="p-4 bg-gray-50 rounded-lg border-2 border-dashed border-blue-500 text-left space-y-2">
             <div className="text-center font-bold text-blue-600 border-b pb-2 mb-2">◆ 予約内容の控え ◆</div>
@@ -220,7 +214,13 @@ export default function TonbodamaBooking() {
             <div className="flex justify-between"><span className="text-gray-500 font-bold">希望日:</span><span className="font-bold">{selectedSlot.event_date}</span></div>
             <div className="flex justify-between"><span className="text-gray-500 font-bold">時間帯:</span><span className="font-bold">{selectedSlot.time_slot}</span></div>
             <div className="flex justify-between"><span className="text-gray-500 font-bold">予約人数:</span><span className="font-bold">{numPeople} 名</span></div>
-            <p className="text-xs text-red-500 font-bold text-center pt-4">※この画面のスクリーンショットを撮影して大切に保管してください。</p>
+            
+            {/* ② 送信完了画面：少し大きく目立たせた注意書き */}
+            <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-center">
+              <p className="text-base font-extrabold text-red-600 leading-snug">
+                ※この画面のスクリーンショットを撮影し、大切に保管してください。
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -339,11 +339,11 @@ export default function TonbodamaBooking() {
                 className="w-full p-2 border rounded-lg text-base bg-white disabled:bg-gray-100"
               >
                 {(!selectedSlot || remainingSeats <= 0 || isSlotBeforeStart) ? (
-                  <option value={1}>1 名</option>
+                  <option value={1}>1 名（対象年齢　10～18歳）</option>
                 ) : (
                   Array.from({ length: Math.max(1, remainingSeats) }, (_, i) => i + 1).map((num) => (
                     <option key={num} value={num}>
-                      {num} 名
+                      {num} 名（対象年齢　10～18歳）
                     </option>
                   ))
                 )}
@@ -374,17 +374,23 @@ export default function TonbodamaBooking() {
         )}
       </div>
 
-      {/* --- 予約内容確認モーダル --- */}
+      {/* --- ① 予約内容確認モーダル --- */}
       {showConfirmModal && selectedSlot && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl max-w-sm w-full p-6 shadow-2xl">
-            <h3 className="text-lg font-bold text-center text-gray-800 mb-4 border-b pb-2">
+            <h3 className="text-lg font-bold text-center text-gray-800 mb-2 border-b pb-2">
               予約内容の確認
             </h3>
             
-            <p className="text-xs text-gray-500 mb-4 text-center">
-              内容に間違いがないかご確認ください。
-            </p>
+            {/* ① 注意書きの追加 */}
+            <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 space-y-1 mb-4">
+              <p className="font-extrabold text-red-600 text-center">
+                ※まだ予約は完了していません。「予約を確定する」を押してください。
+              </p>
+              <p className="text-center font-bold text-gray-700">
+                ※確定後の画面でスクリーンショットの撮影をお願いいたします。
+              </p>
+            </div>
 
             <div className="space-y-3 bg-gray-50 p-4 rounded-lg text-sm mb-6">
               <div className="flex justify-between">

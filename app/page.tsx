@@ -103,14 +103,32 @@ export default function Home() {
   const remainingSeats = selectedSlot ? getSlotRemaining(selectedSlot) : 0;
   const isSlotBeforeStart = selectedSlot ? isBeforeStart(selectedSlot.booking_start_at) : false;
 
-  // 確認画面を開く前のバリデーション
-  const handleOpenConfirm = () => {
+  // 1次チェック：確認画面を開く直前に最新の残数をリアルタイムチェック
+  const handleOpenConfirm = async () => {
     if (!userName.trim() || !selectedSlot) return;
     setErrorMessage('');
+
+    const { data: latestEntries } = await supabase
+      .from('draw_entries')
+      .select('num_people')
+      .eq('event_date', selectedSlot.event_date)
+      .eq('booth_name', selectedSlot.booth_name)
+      .eq('time_slot', selectedSlot.time_slot)
+      .neq('status', 'キャンセル');
+
+    const latestTotal = (latestEntries || []).reduce((sum, item) => sum + (item.num_people || 1), 0);
+    const latestRemaining = selectedSlot.capacity - latestTotal;
+
+    if (numPeople > latestRemaining) {
+      setErrorMessage(`申し訳ありません。最新の残数が不足しているため確認画面に進めません。（残り枠: ${Math.max(0, latestRemaining)}名）`);
+      await loadInitialData();
+      return;
+    }
+
     setShowConfirmModal(true);
   };
 
-  // 実際の送信処理（【緊急補強】送信直前にDBの最新状態を直接再計算して割り込みを完全にブロック）
+  // 2次チェック：送信直前のダブルチェック＆書き込み処理
   const handleRegister = async () => {
     if (!userName.trim() || !selectedSlot) return;
     
@@ -134,7 +152,6 @@ export default function Home() {
       return;
     }
 
-    // ★送信を押したまさにその瞬間の最新データをDBから直接取得
     const { data: latestEntries, error: fetchErr } = await supabase
       .from('draw_entries')
       .select('num_people')
@@ -149,20 +166,17 @@ export default function Home() {
       return;
     }
 
-    // 最新の予約人数合計と実質残り枠を正確に集計
     const latestTotal = (latestEntries || []).reduce((sum, item) => sum + (item.num_people || 1), 0);
     const latestRemaining = selectedSlot.capacity - latestTotal;
 
-    // 希望人数が最新の残枠を超えていたら絶対に入力させずに弾く
     if (numPeople > latestRemaining) {
-      setErrorMessage(`申し訳ありません。直前で定員に達したため予約できませんでした。（残り枠: ${Math.max(0, latestRemaining)}名）`);
+      setErrorMessage(`申し訳ありません。直前に定員に達したため予約できませんでした。（残り枠: ${Math.max(0, latestRemaining)}名）`);
       setIsSubmitting(false);
       setShowConfirmModal(false);
-      await loadInitialData(); // 画面情報を最新に更新
+      await loadInitialData();
       return;
     }
 
-    // 条件を通過した場合のみ予約書き込みを許可
     const { error: insertErr } = await supabase
       .from('draw_entries')
       .insert([
@@ -190,12 +204,13 @@ export default function Home() {
     return <div className="flex justify-center items-center h-screen font-bold text-gray-500">データを読み込み中...</div>;
   }
 
+  // 予約完了画面
   if (isSubmitted && selectedSlot) {
     return (
       <div className="flex justify-center items-center p-4 min-h-screen bg-gray-100">
         <div className="p-6 w-full max-w-md bg-white rounded-xl shadow-lg text-center">
           <h2 className="text-2xl font-bold text-green-600 mb-2">先着予約完了</h2>
-          <p className="text-sm text-gray-600 mb-6">ご予約が確定いたしました。当日会場でお待ちしております。</p>
+          <p className="text-sm text-gray-600 mb-4">ご予約が確定いたしました。当日会場でお待ちしております。</p>
           
           <div className="p-4 bg-gray-50 rounded-lg border-2 border-dashed border-blue-500 text-left space-y-2">
             <div className="text-center font-bold text-blue-600 border-b pb-2 mb-2">◆ 予約内容の控え ◆</div>
@@ -204,7 +219,13 @@ export default function Home() {
             <div className="flex justify-between"><span className="text-gray-500 font-bold">希望ブース:</span><span className="font-bold">{selectedSlot.booth_name}</span></div>
             <div className="flex justify-between"><span className="text-gray-500 font-bold">時間帯:</span><span className="font-bold">{selectedSlot.time_slot}</span></div>
             <div className="flex justify-between"><span className="text-gray-500 font-bold">予約人数:</span><span className="font-bold">{numPeople} 名</span></div>
-            <p className="text-xs text-red-500 font-bold text-center pt-4">※この画面のスクリーンショットを撮影して大切に保管してください。</p>
+            
+            {/* ② 送信完了画面：少し大きく目立たせた注意書き */}
+            <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-center">
+              <p className="text-base font-extrabold text-red-600 leading-snug">
+                ※この画面のスクリーンショットを撮影し、大切に保管してください。
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -372,17 +393,23 @@ export default function Home() {
         )}
       </div>
 
-      {/* --- 予約内容確認モーダル --- */}
+      {/* --- ① 予約内容確認モーダル --- */}
       {showConfirmModal && selectedSlot && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl max-w-sm w-full p-6 shadow-2xl">
-            <h3 className="text-lg font-bold text-center text-gray-800 mb-4 border-b pb-2">
+            <h3 className="text-lg font-bold text-center text-gray-800 mb-2 border-b pb-2">
               予約内容の確認
             </h3>
             
-            <p className="text-xs text-gray-500 mb-4 text-center">
-              内容に間違いがないかご確認ください。
-            </p>
+            {/* ① 注意書きの追加 */}
+            <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 space-y-1 mb-4">
+              <p className="font-extrabold text-red-600 text-center">
+                ※まだ予約は完了していません。「予約を確定する」を押してください。
+              </p>
+              <p className="text-center font-bold text-gray-700">
+                ※確定後の画面でスクリーンショットの撮影をお願いいたします。
+              </p>
+            </div>
 
             <div className="space-y-3 bg-gray-50 p-4 rounded-lg text-sm mb-6">
               <div className="flex justify-between">
