@@ -23,6 +23,108 @@ interface Entry {
   created_at: string;
 }
 
+interface FilterUIProps {
+  inputDate: string;
+  setInputDate: (v: string) => void;
+  inputBooth: string;
+  setInputBooth: (v: string) => void;
+  inputName: string;
+  setInputName: (v: string) => void;
+  availableDates: string[];
+  availableBooths: string[];
+  activeTab: 'entries' | 'master';
+  handleSearch: (e?: React.FormEvent) => void;
+  handleClear: () => void;
+  searchParams: { date: string; booth: string; name: string };
+}
+
+// -------------------------------------------------------------
+// 1. FilterUI を AdminPage の外側に定義（再生成・フリーズを防止）
+// -------------------------------------------------------------
+function FilterUI({
+  inputDate,
+  setInputDate,
+  inputBooth,
+  setInputBooth,
+  inputName,
+  setInputName,
+  availableDates,
+  availableBooths,
+  activeTab,
+  handleSearch,
+  handleClear,
+  searchParams,
+}: FilterUIProps) {
+  return (
+    <form onSubmit={handleSearch} className="bg-gray-50 p-4 rounded-lg border flex flex-wrap gap-3 items-center">
+      <span className="text-xs font-bold text-gray-700">🔍 一覧の絞り込み:</span>
+      
+      {/* 1. 開催日 */}
+      <div>
+        <select
+          value={inputDate}
+          onChange={(e) => setInputDate(e.target.value)}
+          className="p-2 border rounded text-xs bg-white font-medium focus:outline-blue-500"
+        >
+          <option value="">すべての開催日</option>
+          {availableDates.map((d) => (
+            <option key={d} value={d}>{d}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* 2. ブース名 */}
+      <div>
+        <select
+          value={inputBooth}
+          onChange={(e) => setInputBooth(e.target.value)}
+          className="p-2 border rounded text-xs bg-white font-medium focus:outline-blue-500"
+        >
+          <option value="">すべてのブース</option>
+          {availableBooths.map((b) => (
+            <option key={b} value={b}>{b}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* 3. お名前（予約一覧タブでのみ表示） */}
+      {activeTab === 'entries' && (
+        <div>
+          <input
+            type="text"
+            placeholder="お名前を入力..."
+            value={inputName}
+            onChange={(e) => setInputName(e.target.value)}
+            className="p-2 border rounded text-xs bg-white font-medium w-40 md:w-48 focus:outline-blue-500"
+          />
+        </div>
+      )}
+
+      {/* 🔍 検索実行ボタン */}
+      <button
+        type="submit"
+        className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded transition shadow-sm"
+      >
+        検索
+      </button>
+
+      {/* クリアボタン */}
+      {(searchParams.date || searchParams.booth || searchParams.name || inputDate || inputBooth || inputName) && (
+        <button
+          type="button"
+          onClick={handleClear}
+          className="text-xs text-gray-500 hover:text-gray-700 font-bold underline"
+        >
+          条件をリセット
+        </button>
+      )}
+    </form>
+  );
+}
+
+// -------------------------------------------------------------
+// 2. メインコンポーネント
+// -------------------------------------------------------------
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<'entries' | 'master'>('entries');
   
@@ -159,11 +261,11 @@ export default function AdminPage() {
 
   // --- フィルター用オプション生成 ---
   const availableDates = Array.from(
-    new Set([...masters.map(m => m.event_date), ...entries.map(e => e.event_date)])
+    new Set([...masters.map((m) => m.event_date), ...entries.map((e) => e.event_date)])
   ).filter(Boolean).sort();
 
   const availableBooths = Array.from(
-    new Set([...masters.map(m => m.booth_name), ...entries.map(e => e.booth_name)])
+    new Set([...masters.map((m) => m.booth_name), ...entries.map((e) => e.booth_name)])
   ).filter(Boolean).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
   // ★検索ボタン押下時の処理
@@ -185,7 +287,7 @@ export default function AdminPage() {
   };
 
   // --- 絞り込み処理（確定された searchParams をもとに実行） ---
-  const filteredEntries = entries.filter(item => {
+  const filteredEntries = entries.filter((item) => {
     const matchDate = searchParams.date ? item.event_date === searchParams.date : true;
     const matchBooth = searchParams.booth ? item.booth_name === searchParams.booth : true;
     const matchName = searchParams.name 
@@ -195,78 +297,11 @@ export default function AdminPage() {
     return matchDate && matchBooth && matchName;
   });
 
-  const filteredMasters = masters.filter(item => {
+  const filteredMasters = masters.filter((item) => {
     const matchDate = searchParams.date ? item.event_date === searchParams.date : true;
     const matchBooth = searchParams.booth ? item.booth_name === searchParams.booth : true;
     return matchDate && matchBooth;
   });
-
-  // 共通フィルターコンポーネント
-  const FilterUI = () => (
-    <form onSubmit={handleSearch} className="bg-gray-50 p-4 rounded-lg border flex flex-wrap gap-3 items-center">
-      <span className="text-xs font-bold text-gray-700">🔍 一覧の絞り込み:</span>
-      
-      {/* 1. 開催日 */}
-      <div>
-        <select
-          value={inputDate}
-          onChange={(e) => setInputDate(e.target.value)}
-          className="p-2 border rounded text-xs bg-white font-medium focus:outline-blue-500"
-        >
-          <option value="">すべての開催日</option>
-          {availableDates.map(d => (
-            <option key={d} value={d}>{d}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* 2. ブース名 */}
-      <div>
-        <select
-          value={inputBooth}
-          onChange={(e) => setInputBooth(e.target.value)}
-          className="p-2 border rounded text-xs bg-white font-medium focus:outline-blue-500"
-        >
-          <option value="">すべてのブース</option>
-          {availableBooths.map(b => (
-            <option key={b} value={b}>{b}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* 3. お名前（予約一覧タブでのみ表示） */}
-      {activeTab === 'entries' && (
-        <div>
-          <input
-            type="text"
-            placeholder="お名前を入力..."
-            value={inputName}
-            onChange={(e) => setInputName(e.target.value)}
-            className="p-2 border rounded text-xs bg-white font-medium w-40 md:w-48 focus:outline-blue-500"
-          />
-        </div>
-      )}
-
-      {/* 🔍 検索実行ボタン */}
-      <button
-        type="submit"
-        className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded transition shadow-sm"
-      >
-        検索
-      </button>
-
-      {/* クリアボタン */}
-      {(searchParams.date || searchParams.booth || searchParams.name || inputDate || inputBooth || inputName) && (
-        <button
-          type="button"
-          onClick={handleClear}
-          className="text-xs text-gray-500 hover:text-gray-700 font-bold underline"
-        >
-          条件をリセット
-        </button>
-      )}
-    </form>
-  );
 
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-6">
@@ -311,7 +346,20 @@ export default function AdminPage() {
           {/* ----- タブ1: 予約一覧 ----- */}
           {activeTab === 'entries' && (
             <div className="space-y-4">
-              <FilterUI />
+              <FilterUI
+                inputDate={inputDate}
+                setInputDate={setInputDate}
+                inputBooth={inputBooth}
+                setInputBooth={setInputBooth}
+                inputName={inputName}
+                setInputName={setInputName}
+                availableDates={availableDates}
+                availableBooths={availableBooths}
+                activeTab={activeTab}
+                handleSearch={handleSearch}
+                handleClear={handleClear}
+                searchParams={searchParams}
+              />
               <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
                 <table className="w-full text-left text-sm">
                   <thead className="bg-gray-50 border-b">
@@ -451,7 +499,20 @@ export default function AdminPage() {
               </div>
 
               {/* 2. 表示絞り込みフィルター */}
-              <FilterUI />
+              <FilterUI
+                inputDate={inputDate}
+                setInputDate={setInputDate}
+                inputBooth={inputBooth}
+                setInputBooth={setInputBooth}
+                inputName={inputName}
+                setInputName={setInputName}
+                availableDates={availableDates}
+                availableBooths={availableBooths}
+                activeTab={activeTab}
+                handleSearch={handleSearch}
+                handleClear={handleClear}
+                searchParams={searchParams}
+              />
 
               {/* 3. マスターデータ一覧 ＆ 人数超過エラー判定 */}
               <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
