@@ -32,7 +32,7 @@ export default function Home() {
   const [selectedSlot, setSelectedSlot] = useState<MasterSlot | null>(null);
   const [numPeople, setNumPeople] = useState<number>(1);
   
-  const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false); // 確認画面表示フラグ
+  const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
   const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
@@ -86,7 +86,7 @@ export default function Home() {
       e.booth_name === slot.booth_name &&
       e.time_slot === slot.time_slot
     );
-    const used = matchedEntries.reduce((sum, item) => sum + item.num_people, 0);
+    const used = matchedEntries.reduce((sum, item) => sum + (item.num_people || 1), 0);
     return slot.capacity - used;
   };
 
@@ -100,14 +100,14 @@ export default function Home() {
   const remainingSeats = selectedSlot ? getSlotRemaining(selectedSlot) : 0;
   const isSlotBeforeStart = selectedSlot ? isBeforeStart(selectedSlot.booking_start_at) : false;
 
-  // 確認画面を開く前の最終バリデーション
+  // 確認画面を開く前のバリデーション
   const handleOpenConfirm = () => {
     if (!userName.trim() || !selectedSlot) return;
     setErrorMessage('');
     setShowConfirmModal(true);
   };
 
-  // 実際の送信処理（確認モーダルで「確定する」を押した時）
+  // 実際の送信処理（【緊急補強】送信直前にDBの最新状態を直接再計算して割り込みを完全にブロック）
   const handleRegister = async () => {
     if (!userName.trim() || !selectedSlot) return;
     
@@ -131,7 +131,8 @@ export default function Home() {
       return;
     }
 
-    const { data: latestEntries } = await supabase
+    // ★送信を押したまさにその瞬間の最新データをDBから直接取得
+    const { data: latestEntries, error: fetchErr } = await supabase
       .from('draw_entries')
       .select('num_people')
       .eq('event_date', selectedSlot.event_date)
@@ -139,18 +140,27 @@ export default function Home() {
       .eq('time_slot', selectedSlot.time_slot)
       .neq('status', 'キャンセル');
 
-    const latestTotal = (latestEntries || []).reduce((sum, item) => sum + item.num_people, 0);
-    const latestRemaining = selectedSlot.capacity - latestTotal;
-
-    if (numPeople > latestRemaining) {
-      setErrorMessage(`申し訳ありません。タッチの差で定員に達したため予約できませんでした。（残り枠: ${Math.max(0, latestRemaining)}名）`);
+    if (fetchErr) {
+      setErrorMessage('通信エラーが発生しました。もう一度お試しください。');
       setIsSubmitting(false);
-      setShowConfirmModal(false);
-      await loadInitialData();
       return;
     }
 
-    const { error } = await supabase
+    // 最新の予約人数合計と実質残り枠を正確に集計
+    const latestTotal = (latestEntries || []).reduce((sum, item) => sum + (item.num_people || 1), 0);
+    const latestRemaining = selectedSlot.capacity - latestTotal;
+
+    // 希望人数が最新の残枠を超えていたら絶対に入力させずに弾く
+    if (numPeople > latestRemaining) {
+      setErrorMessage(`申し訳ありません。直前で定員に達したため予約できませんでした。（残り枠: ${Math.max(0, latestRemaining)}名）`);
+      setIsSubmitting(false);
+      setShowConfirmModal(false);
+      await loadInitialData(); // 画面情報を最新に更新
+      return;
+    }
+
+    // 条件を通過した場合のみ予約書き込みを許可
+    const { error: insertErr } = await supabase
       .from('draw_entries')
       .insert([
         {
@@ -163,7 +173,7 @@ export default function Home() {
         }
       ]);
 
-    if (error) {
+    if (insertErr) {
       setErrorMessage('通信エラーが発生しました。時間をおいて再度お試しください。');
       setIsSubmitting(false);
       setShowConfirmModal(false);
