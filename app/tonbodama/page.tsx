@@ -239,6 +239,8 @@ export default function TonbodamaBooking() {
           <p>・お名前は当日の呼び出しにのみ使用いたします。</p>
           <p>・本予約は「先着順」です。定員に達し次第受付終了となります。</p>
           <p className="font-bold text-amber-900">・希望人数には、体験者数のみ入力してください。同伴の保護者様等体験されない方は含めないでください。</p>
+          <p className="font-bold text-amber-900">・「とんぼ玉をつくろう」の対象年齢は10～18歳です。10歳未満のお子様は危険なためお断りしております。</p>
+          <p className="font-bold text-amber-900">・大変人気なブースとなっており、お子様の体験者を優先とし19歳以上のお客様も対象外とさせていただきます。ご了承ください。</p>
           <p>・各時間帯の【5分前】に予約受付を締め切ります。</p>
           <p className="font-bold text-amber-900">・保護者1名につき、小学生以下のお子様2名までご予約いただけます。</p>
           <p className="font-bold text-amber-900">・ご予約いただいた体験終了時刻を過ぎると体験できなくなります。時間に余裕をもってお越しください。</p>
