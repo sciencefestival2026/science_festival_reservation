@@ -21,24 +21,25 @@ export default function StaffViewPage() {
   const [inputDate, setInputDate] = useState<string>('');
   const [inputBooth, setInputBooth] = useState<string>('');
   const [inputTime, setInputTime] = useState<string>('');
-  const [inputName, setInputName] = useState<string>(''); // ★ お名前入力用
+  const [inputName, setInputName] = useState<string>('');
 
   // --- 実際に絞り込みに適用する検索条件ステート ---
   const [searchParams, setSearchParams] = useState({
     date: '',
     booth: '',
     time: '',
-    name: '', // ★ お名前検索条件
+    name: '',
   });
 
   // データ取得
   const fetchData = async () => {
     setLoading(true);
-    // 「予約確定」または「当選」データのみ取得
+    // 「予約確定」または「当選」データを取得（rangeで1000件制限を突破）
     const { data, error } = await supabase
       .from('draw_entries')
       .select('*')
-      .in('status', ['予約確定', '当選']);
+      .in('status', ['予約確定', '当選'])
+      .range(0, 9999); // ★ 1000件制限を解除（最大10,000件まで取得可能）
 
     if (error) {
       console.error('名簿取得エラー:', error);
@@ -86,7 +87,7 @@ export default function StaffViewPage() {
     )
   ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
-  // ★ 検索実行
+  // 検索実行
   const handleSearch = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setSearchParams({
@@ -100,7 +101,7 @@ export default function StaffViewPage() {
     localStorage.setItem('staff_fTime', inputTime);
   };
 
-  // ★ 条件リセット
+  // 条件リセット
   const handleClear = () => {
     setInputDate('');
     setInputBooth('');
@@ -199,7 +200,7 @@ export default function StaffViewPage() {
               </select>
             </div>
 
-            {/* ★ 4. お名前検索インプット */}
+            {/* 4. お名前検索インプット */}
             <div>
               <input
                 type="text"

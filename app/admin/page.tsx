@@ -28,14 +28,17 @@ interface FilterUIProps {
   setInputDate: (v: string) => void;
   inputBooth: string;
   setInputBooth: (v: string) => void;
+  inputTime: string;
+  setInputTime: (v: string) => void;
   inputName: string;
   setInputName: (v: string) => void;
   availableDates: string[];
   availableBooths: string[];
+  availableTimes: string[];
   activeTab: 'entries' | 'master';
   handleSearch: (e?: React.FormEvent) => void;
   handleClear: () => void;
-  searchParams: { date: string; booth: string; name: string };
+  searchParams: { date: string; booth: string; time: string; name: string };
 }
 
 // -------------------------------------------------------------
@@ -46,10 +49,13 @@ function FilterUI({
   setInputDate,
   inputBooth,
   setInputBooth,
+  inputTime,
+  setInputTime,
   inputName,
   setInputName,
   availableDates,
   availableBooths,
+  availableTimes,
   activeTab,
   handleSearch,
   handleClear,
@@ -63,7 +69,11 @@ function FilterUI({
       <div>
         <select
           value={inputDate}
-          onChange={(e) => setInputDate(e.target.value)}
+          onChange={(e) => {
+            setInputDate(e.target.value);
+            setInputBooth('');
+            setInputTime('');
+          }}
           className="p-2 border rounded text-xs bg-white font-medium focus:outline-blue-500"
         >
           <option value="">すべての開催日</option>
@@ -77,7 +87,10 @@ function FilterUI({
       <div>
         <select
           value={inputBooth}
-          onChange={(e) => setInputBooth(e.target.value)}
+          onChange={(e) => {
+            setInputBooth(e.target.value);
+            setInputTime('');
+          }}
           className="p-2 border rounded text-xs bg-white font-medium focus:outline-blue-500"
         >
           <option value="">すべてのブース</option>
@@ -87,7 +100,21 @@ function FilterUI({
         </select>
       </div>
 
-      {/* 3. お名前（予約一覧タブでのみ表示） */}
+      {/* 3. 時間帯 */}
+      <div>
+        <select
+          value={inputTime}
+          onChange={(e) => setInputTime(e.target.value)}
+          className="p-2 border rounded text-xs bg-white font-medium focus:outline-blue-500"
+        >
+          <option value="">すべての時間帯</option>
+          {availableTimes.map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* 4. お名前（予約一覧タブでのみ表示） */}
       {activeTab === 'entries' && (
         <div>
           <input
@@ -100,7 +127,7 @@ function FilterUI({
         </div>
       )}
 
-      {/* 🔍 検索実行ボタン */}
+      {/* 検索実行ボタン */}
       <button
         type="submit"
         className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded transition shadow-sm"
@@ -109,7 +136,7 @@ function FilterUI({
       </button>
 
       {/* クリアボタン */}
-      {(searchParams.date || searchParams.booth || searchParams.name || inputDate || inputBooth || inputName) && (
+      {(searchParams.date || searchParams.booth || searchParams.time || searchParams.name || inputDate || inputBooth || inputTime || inputName) && (
         <button
           type="button"
           onClick={handleClear}
@@ -138,12 +165,14 @@ export default function AdminPage() {
   // --- フォーム入力用ステート（一時保持） ---
   const [inputDate, setInputDate] = useState<string>('');
   const [inputBooth, setInputBooth] = useState<string>('');
+  const [inputTime, setInputTime] = useState<string>('');
   const [inputName, setInputName] = useState<string>('');
 
   // --- 実際に絞り込みに適用する検索条件ステート ---
   const [searchParams, setSearchParams] = useState({
     date: '',
     booth: '',
+    time: '',
     name: '',
   });
 
@@ -158,10 +187,11 @@ export default function AdminPage() {
   const fetchData = async () => {
     setLoading(true);
     
-    // 1. 予約エントリー取得
+    // 1. 予約エントリー取得（range(0, 9999)で1000件制限を解消）
     const { data: entriesData, error: entriesErr } = await supabase
       .from('draw_entries')
       .select('*')
+      .range(0, 9999)
       .order('created_at', { ascending: false });
 
     if (entriesErr) {
@@ -170,10 +200,11 @@ export default function AdminPage() {
       setEntries(entriesData || []);
     }
 
-    // 2. マスターデータ取得
+    // 2. マスターデータ取得（range(0, 9999)で1000件制限を解消）
     const { data: masterData, error: masterErr } = await supabase
       .from('draw_master')
       .select('*')
+      .range(0, 9999)
       .order('event_date', { ascending: true })
       .order('booth_name', { ascending: true })
       .order('time_slot', { ascending: true });
@@ -265,43 +296,65 @@ export default function AdminPage() {
   ).filter(Boolean).sort();
 
   const availableBooths = Array.from(
-    new Set([...masters.map((m) => m.booth_name), ...entries.map((e) => e.booth_name)])
+    new Set(
+      [...masters, ...entries]
+        .filter((item) => !inputDate || item.event_date === inputDate)
+        .map((item) => item.booth_name)
+    )
   ).filter(Boolean).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
-  // ★検索ボタン押下時の処理
+  const availableTimes = Array.from(
+    new Set(
+      [...masters, ...entries]
+        .filter(
+          (item) =>
+            (!inputDate || item.event_date === inputDate) &&
+            (!inputBooth || item.booth_name === inputBooth)
+        )
+        .map((item) => item.time_slot)
+    )
+  ).filter(Boolean).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+  // 検索ボタン押下時の処理
   const handleSearch = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setSearchParams({
       date: inputDate,
       booth: inputBooth,
+      time: inputTime,
       name: inputName,
     });
   };
 
-  // ★クリアボタン押下時の処理
+  // クリアボタン押下時の処理
   const handleClear = () => {
     setInputDate('');
     setInputBooth('');
+    setInputTime('');
     setInputName('');
-    setSearchParams({ date: '', booth: '', name: '' });
+    setSearchParams({ date: '', booth: '', time: '', name: '' });
   };
 
-  // --- 絞り込み処理（確定された searchParams をもとに実行） ---
+  // --- 絞り込み処理 ---
   const filteredEntries = entries.filter((item) => {
     const matchDate = searchParams.date ? item.event_date === searchParams.date : true;
     const matchBooth = searchParams.booth ? item.booth_name === searchParams.booth : true;
+    const matchTime = searchParams.time ? item.time_slot === searchParams.time : true;
     const matchName = searchParams.name 
       ? (item.user_name || '').toLowerCase().includes(searchParams.name.trim().toLowerCase()) 
       : true;
 
-    return matchDate && matchBooth && matchName;
+    return matchDate && matchBooth && matchTime && matchName;
   });
 
   const filteredMasters = masters.filter((item) => {
     const matchDate = searchParams.date ? item.event_date === searchParams.date : true;
     const matchBooth = searchParams.booth ? item.booth_name === searchParams.booth : true;
-    return matchDate && matchBooth;
+    const matchTime = searchParams.time ? item.time_slot === searchParams.time : true;
+    return matchDate && matchBooth && matchTime;
   });
+
+  const totalEntriesPeople = filteredEntries.reduce((sum, item) => sum + (item.num_people || 1), 0);
 
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-6">
@@ -309,13 +362,13 @@ export default function AdminPage() {
         <h1 className="text-2xl font-bold">予約システム管理画面</h1>
         <button
           onClick={fetchData}
-          className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-sm rounded transition"
+          className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-sm rounded transition font-medium"
         >
           🔄 最新情報に更新
         </button>
       </div>
 
-      {/* タブ切り替え（上部選択） */}
+      {/* タブ切り替え */}
       <div className="flex space-x-4 border-b">
         <button
           className={`py-2 px-4 font-semibold border-b-2 transition ${
@@ -351,15 +404,29 @@ export default function AdminPage() {
                 setInputDate={setInputDate}
                 inputBooth={inputBooth}
                 setInputBooth={setInputBooth}
+                inputTime={inputTime}
+                setInputTime={setInputTime}
                 inputName={inputName}
                 setInputName={setInputName}
                 availableDates={availableDates}
                 availableBooths={availableBooths}
+                availableTimes={availableTimes}
                 activeTab={activeTab}
                 handleSearch={handleSearch}
                 handleClear={handleClear}
                 searchParams={searchParams}
               />
+
+              {/* 集計ステータス表示 */}
+              <div className="flex justify-between items-center px-1">
+                <span className="text-xs text-gray-500 font-medium">
+                  表示中のデータ: {filteredEntries.length} 件
+                </span>
+                <div className="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-md border border-blue-100">
+                  該当: <span className="text-base">{filteredEntries.length}</span> 組 / 合計人数: <span className="text-base">{totalEntriesPeople}</span> 名
+                </div>
+              </div>
+
               <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
                 <table className="w-full text-left text-sm">
                   <thead className="bg-gray-50 border-b">
@@ -376,25 +443,29 @@ export default function AdminPage() {
                   <tbody className="divide-y">
                     {filteredEntries.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="p-4 text-center text-gray-500">
+                        <td colSpan={7} className="p-8 text-center text-gray-500">
                           該当する予約データはありません
                         </td>
                       </tr>
                     ) : (
                       filteredEntries.map((item) => (
-                        <tr key={item.id} className="hover:bg-gray-50">
-                          <td className="p-3">{item.event_date}</td>
-                          <td className="p-3 font-semibold">{item.user_name}</td>
-                          <td className="p-3">{item.booth_name}</td>
-                          <td className="p-3">{item.time_slot}</td>
-                          <td className="p-3">{item.num_people}名</td>
+                        <tr key={item.id} className="hover:bg-gray-50 transition">
+                          <td className="p-3 text-gray-600">{item.event_date}</td>
+                          <td className="p-3 font-semibold text-gray-900">{item.user_name}</td>
+                          <td className="p-3 font-medium text-gray-700">{item.booth_name}</td>
+                          <td className="p-3 text-gray-600">{item.time_slot}</td>
+                          <td className="p-3">
+                            <span className="px-2 py-1 bg-blue-50 text-blue-700 font-bold rounded text-xs border border-blue-100">
+                              {item.num_people}名
+                            </span>
+                          </td>
                           <td className="p-3 text-xs text-gray-500">
                             {item.created_at ? new Date(item.created_at).toLocaleString('ja-JP') : '-'}
                           </td>
                           <td className="p-3 text-center">
                             <button
                               onClick={() => handleDeleteEntry(item.id)}
-                              className="text-red-600 hover:text-red-800 text-xs px-2 py-1 border border-red-200 rounded hover:bg-red-50"
+                              className="text-red-600 hover:text-red-800 text-xs px-2 py-1 border border-red-200 rounded hover:bg-red-50 transition"
                             >
                               🗑️ 削除
                             </button>
@@ -411,7 +482,7 @@ export default function AdminPage() {
           {/* ----- タブ2: マスター枠管理 ----- */}
           {activeTab === 'master' && (
             <div className="space-y-6">
-              {/* 1. 折りたたみ式：新規追加フォーム */}
+              {/* 新規追加フォーム */}
               <div className="bg-white border border-blue-200 rounded-lg overflow-hidden shadow-sm">
                 <button
                   type="button"
@@ -498,23 +569,26 @@ export default function AdminPage() {
                 )}
               </div>
 
-              {/* 2. 表示絞り込みフィルター */}
+              {/* フィルター */}
               <FilterUI
                 inputDate={inputDate}
                 setInputDate={setInputDate}
                 inputBooth={inputBooth}
                 setInputBooth={setInputBooth}
+                inputTime={inputTime}
+                setInputTime={setInputTime}
                 inputName={inputName}
                 setInputName={setInputName}
                 availableDates={availableDates}
                 availableBooths={availableBooths}
+                availableTimes={availableTimes}
                 activeTab={activeTab}
                 handleSearch={handleSearch}
                 handleClear={handleClear}
                 searchParams={searchParams}
               />
 
-              {/* 3. マスターデータ一覧 ＆ 人数超過エラー判定 */}
+              {/* マスターデータ一覧 */}
               <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
                 <table className="w-full text-left text-sm">
                   <thead className="bg-gray-50 border-b">
@@ -531,7 +605,7 @@ export default function AdminPage() {
                   <tbody className="divide-y">
                     {filteredMasters.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="p-4 text-center text-gray-500">
+                        <td colSpan={7} className="p-8 text-center text-gray-500">
                           該当する枠データがありません
                         </td>
                       </tr>
@@ -542,11 +616,11 @@ export default function AdminPage() {
                         const isOverCapacity = reserved > cap;
 
                         return (
-                          <tr key={slot.id} className={isOverCapacity ? 'bg-red-50' : 'hover:bg-gray-50'}>
-                            <td className="p-3">{slot.event_date}</td>
-                            <td className="p-3 font-semibold">{slot.booth_name}</td>
-                            <td className="p-3">{slot.time_slot}</td>
-                            <td className="p-3">{cap}名</td>
+                          <tr key={slot.id} className={isOverCapacity ? 'bg-red-50' : 'hover:bg-gray-50 transition'}>
+                            <td className="p-3 text-gray-600">{slot.event_date}</td>
+                            <td className="p-3 font-semibold text-gray-900">{slot.booth_name}</td>
+                            <td className="p-3 text-gray-600">{slot.time_slot}</td>
+                            <td className="p-3 text-gray-800">{cap}名</td>
                             <td className="p-3 text-xs text-gray-600">
                               {slot.booking_start_at
                                 ? new Date(slot.booking_start_at).toLocaleString('ja-JP', {
@@ -581,7 +655,7 @@ export default function AdminPage() {
                             <td className="p-3 text-center">
                               <button
                                 onClick={() => handleDeleteMaster(slot.id)}
-                                className="text-red-600 hover:text-red-800 text-xs px-2 py-1 border border-red-200 rounded hover:bg-red-50"
+                                className="text-red-600 hover:text-red-800 text-xs px-2 py-1 border border-red-200 rounded hover:bg-red-50 transition"
                               >
                                 🗑️ 削除
                               </button>
