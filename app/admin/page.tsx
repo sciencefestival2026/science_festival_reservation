@@ -183,45 +183,92 @@ export default function AdminPage() {
   const [newCapacity, setNewCapacity] = useState<number>(5);
   const [newBookingStartAt, setNewBookingStartAt] = useState('');
 
-  // 全データ取得
+  // 全データ取得（1,000件制限を自動ループで回避）
   const fetchData = async () => {
     setLoading(true);
-    
-    // 1. 予約エントリー取得（range(0, 9999)で1000件制限を解消）
-    const { data: entriesData, error: entriesErr } = await supabase
-      .from('draw_entries')
-      .select('*')
-      .range(0, 9999)
-      .order('created_at', { ascending: false });
 
-    if (entriesErr) {
-      console.error('予約データの取得エラー:', entriesErr);
-    } else {
-      setEntries(entriesData || []);
-    }
+    try {
+      // 1. 予約エントリー取得 (1,000件ずつループ取得)
+      let fetchedEntries: Entry[] = [];
+      let entryPage = 0;
+      const pageSize = 1000;
+      let hasMoreEntries = true;
 
-    // 2. マスターデータ取得（range(0, 9999)で1000件制限を解消）
-    const { data: masterData, error: masterErr } = await supabase
-      .from('draw_master')
-      .select('*')
-      .range(0, 9999)
-      .order('event_date', { ascending: true })
-      .order('booth_name', { ascending: true })
-      .order('time_slot', { ascending: true });
+      while (hasMoreEntries) {
+        const from = entryPage * pageSize;
+        const to = from + pageSize - 1;
 
-    if (masterErr) {
-      console.error('マスターデータの取得エラー:', masterErr);
-    } else {
-      const sortedMaster = (masterData || []).sort((a, b) => {
+        const { data, error } = await supabase
+          .from('draw_entries')
+          .select('*')
+          .range(from, to)
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          console.error('予約データの取得エラー:', error);
+          break;
+        }
+
+        if (data && data.length > 0) {
+          fetchedEntries = [...fetchedEntries, ...(data as Entry[])];
+          if (data.length < pageSize) {
+            hasMoreEntries = false;
+          } else {
+            entryPage++;
+          }
+        } else {
+          hasMoreEntries = false;
+        }
+      }
+      setEntries(fetchedEntries);
+
+      // 2. マスターデータ取得 (1,000件ずつループ取得)
+      let fetchedMasters: MasterSlot[] = [];
+      let masterPage = 0;
+      let hasMoreMasters = true;
+
+      while (hasMoreMasters) {
+        const from = masterPage * pageSize;
+        const to = from + pageSize - 1;
+
+        const { data, error } = await supabase
+          .from('draw_master')
+          .select('*')
+          .range(from, to)
+          .order('event_date', { ascending: true })
+          .order('booth_name', { ascending: true })
+          .order('time_slot', { ascending: true });
+
+        if (error) {
+          console.error('マスターデータの取得エラー:', error);
+          break;
+        }
+
+        if (data && data.length > 0) {
+          fetchedMasters = [...fetchedMasters, ...(data as MasterSlot[])];
+          if (data.length < pageSize) {
+            hasMoreMasters = false;
+          } else {
+            masterPage++;
+          }
+        } else {
+          hasMoreMasters = false;
+        }
+      }
+
+      const sortedMaster = fetchedMasters.sort((a, b) => {
         if (a.event_date !== b.event_date) return a.event_date.localeCompare(b.event_date);
         if (a.booth_name !== b.booth_name) return a.booth_name.localeCompare(b.booth_name, undefined, { numeric: true });
         return a.time_slot.localeCompare(b.time_slot, undefined, { numeric: true });
       });
 
       setMasters(sortedMaster);
-    }
 
-    setLoading(false);
+    } catch (err) {
+      console.error('予期せぬエラー:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -280,7 +327,7 @@ export default function AdminPage() {
     }
   };
 
-  // 各枠の予約数を計算
+  // 各枠の予約数を計算（1,000件以上の全エントリーを対象に合算）
   const getReservedCount = (event_date: string, booth_name: string, time_slot: string) => {
     return entries.filter(
       (entry) =>
@@ -393,7 +440,7 @@ export default function AdminPage() {
       </div>
 
       {loading ? (
-        <p className="text-gray-500 text-center py-8">データを読み込み中...</p>
+        <p className="text-gray-500 text-center py-8">全データを読み込み中...</p>
       ) : (
         <>
           {/* ----- タブ1: 予約一覧 ----- */}
@@ -420,7 +467,7 @@ export default function AdminPage() {
               {/* 集計ステータス表示 */}
               <div className="flex justify-between items-center px-1">
                 <span className="text-xs text-gray-500 font-medium">
-                  表示中のデータ: {filteredEntries.length} 件
+                  Supabase取得全件数: {entries.length} 件 / 表示中: {filteredEntries.length} 件
                 </span>
                 <div className="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-md border border-blue-100">
                   該当: <span className="text-base">{filteredEntries.length}</span> 組 / 合計人数: <span className="text-base">{totalEntriesPeople}</span> 名
@@ -444,7 +491,7 @@ export default function AdminPage() {
                     {filteredEntries.length === 0 ? (
                       <tr>
                         <td colSpan={7} className="p-8 text-center text-gray-500">
-                          該当する予約データはありません
+                          該当する予約データはありません（全件数: {entries.length}件）
                         </td>
                       </tr>
                     ) : (

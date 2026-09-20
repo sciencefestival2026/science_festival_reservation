@@ -32,24 +32,50 @@ export default function StaffViewPage() {
     name: '',
   });
 
-  // データ取得関数
+  // データ取得関数（1000件制限を自動分割で突破）
   const fetchData = async () => {
     setLoading(true);
     
-    // 他テーブルと結合（JOIN）せず、単体で全件取得（1000件制限解除）
-    const { data, error } = await supabase
-      .from('draw_entries')
-      .select('*')
-      .range(0, 9999)
-      .order('created_at', { ascending: false });
+    let fetchedData: Entry[] = [];
+    let page = 0;
+    const pageSize = 1000;
+    let hasMore = true;
 
-    if (error) {
-      console.error('名簿取得エラー:', error);
-      alert('データ取得エラー: ' + error.message);
-    } else if (data) {
-      console.log('【デバッグ】Supabaseから直接取得した全件数:', data.length);
-      
-      const sorted = (data as Entry[]).sort((a, b) => {
+    try {
+      // 1,000件ずつ繰り返し取得して1つの配列に合体
+      while (hasMore) {
+        const from = page * pageSize;
+        const to = from + pageSize - 1;
+
+        const { data, error } = await supabase
+          .from('draw_entries')
+          .select('*')
+          .range(from, to)
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          console.error('名簿取得エラー:', error);
+          alert('データ取得エラー: ' + error.message);
+          break;
+        }
+
+        if (data && data.length > 0) {
+          fetchedData = [...fetchedData, ...(data as Entry[])];
+          // 取得件数が1000件未満なら全件取り切ったと判定
+          if (data.length < pageSize) {
+            hasMore = false;
+          } else {
+            page++;
+          }
+        } else {
+          hasMore = false;
+        }
+      }
+
+      console.log('【全件取得完了】合計件数:', fetchedData.length);
+
+      // 日付 ＞ ブース ＞ 時間帯 の順でソート
+      const sorted = fetchedData.sort((a, b) => {
         const dateA = a.event_date || '';
         const dateB = b.event_date || '';
         if (dateA !== dateB) return dateA.localeCompare(dateB);
@@ -64,15 +90,18 @@ export default function StaffViewPage() {
       });
 
       setAllEntries(sorted);
+    } catch (err) {
+      console.error('予期せぬエラー:', err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
     fetchData();
   }, []);
 
-  // ドロップダウン用の選択肢生成（trim処理で揺れを防止）
+  // ドロップダウン用の選択肢生成（trim処理で表記揺れを防止）
   const dateOptions = Array.from(
     new Set(allEntries.map((item) => (item.event_date || '').trim()).filter(Boolean))
   ).sort();
@@ -158,7 +187,7 @@ export default function StaffViewPage() {
       </div>
 
       {loading ? (
-        <p className="text-gray-500 text-center py-8">最新の名簿データを読み込み中...</p>
+        <p className="text-gray-500 text-center py-8">最新の名簿データを全件読み込み中...</p>
       ) : (
         <div className="space-y-4">
           {/* 検索・絞り込みフィルター */}
@@ -271,7 +300,7 @@ export default function StaffViewPage() {
                 {displayedEntries.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="p-8 text-center text-gray-500">
-                      該当する予約データはありません（Supabase取得件数: {allEntries.length}件）
+                      該当する予約データはありません（全件数: {allEntries.length}件）
                     </td>
                   </tr>
                 ) : (
